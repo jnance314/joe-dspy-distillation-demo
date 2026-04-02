@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Environment
+.env
+
+# DSPy artifacts
+optimized_*.json
+production_prompt.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

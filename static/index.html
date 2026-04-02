@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DSPy Prompt Optimizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<div class="container" x-data="app">
+
+  <!-- Header -->
+  <h1>DSPy Prompt Optimizer</h1>
+  <p class="subtitle">Optimize prompts automatically. Deploy cheap models that perform like expensive ones.</p>
+
+  <!-- Mode Toggle -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div class="mode-toggle">
+        <button class="btn" :class="{ active: mode === 'default' }" @click="loadDefaultTask()">Default Task</button>
+        <button class="btn" :class="{ active: mode === 'fresh' }" @click="freshTask()">Fresh Task</button>
+      </div>
+      <template x-if="mode === 'default'">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0;">
+          <input type="checkbox" x-model="useDefaultData" style="width:auto;">
+          <span style="font-size:0.85rem;">Use default synthetic data</span>
+        </label>
+      </template>
+    </div>
+  </div>
+
+  <!-- Task Configuration -->
+  <div class="card">
+    <h2>Task Configuration</h2>
+
+    <template x-if="mode === 'fresh'">
+      <div class="help">
+        Define your task: what goes in, what comes out, and the rules the model should follow.
+        The description becomes the model's system prompt preamble.
+      </div>
+    </template>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Task Name</label>
+        <input type="text" x-model="task.name" placeholder="e.g., Brand Voice Compliance">
+      </div>
+      <div class="form-group">
+        <label>Description (becomes prompt preamble)</label>
+        <input type="text" x-model="task.description" placeholder="e.g., Check if copy matches brand guidelines...">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Guidelines / Context</label>
+      <textarea rows="6" x-model="task.guidelines" placeholder="Paste your brand guidelines, rules, context..."></textarea>
+    </div>
+
+    <!-- Signature Fields -->
+    <h2 style="margin-top:16px;">Signature Fields</h2>
+    <template x-if="mode === 'fresh'">
+      <div class="help">
+        Input fields: what the model receives (e.g., the text to analyze).
+        Output fields: what the model produces (e.g., classification, flagged phrases, rewritten text).
+      </div>
+    </template>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <!-- Input fields -->
+      <div>
+        <label>Input Fields</label>
+        <div class="fields-list">
+          <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'input')" :key="idx">
+            <div class="field-row">
+              <input type="text" x-model="f.name" placeholder="field name">
+              <input type="text" x-model="f.description" placeholder="description">
+              <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
+            </div>
+          </template>
+          <button class="btn btn-sm" @click="addField('input')">+ Add Input</button>
+        </div>
+      </div>
+      <!-- Output fields -->
+      <div>
+        <label>Output Fields</label>
+        <div class="fields-list">
+          <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'output')" :key="idx">
+            <div class="field-row">
+              <input type="text" x-model="f.name" placeholder="field name">
+              <input type="text" x-model="f.description" placeholder="description">
+              <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
+            </div>
+          </template>
+          <button class="btn btn-sm" @click="addField('output')">+ Add Output</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="card">
+    <h2>Evaluation Metrics</h2>
+    <template x-if="mode === 'fresh'">
+      <div class="help">
+        Define how to score the model's output. Each metric targets one output field.
+        Weights are normalized automatically. The composite score is what DSPy optimizes against.
+      </div>
+    </template>
+
+    <template x-for="(m, idx) in task.metrics" :key="m.name + idx">
+      <div style="margin-bottom:12px; padding:12px; background:var(--surface2); border-radius:var(--radius);">
+        <div class="metric-row">
+          <input type="text" x-model="m.name" placeholder="metric name">
+          <select x-model="m.metric_type">
+            <option value="exact_match">Exact Match</option>
+            <option value="f1_phrases">F1 Phrases</option>
+            <option value="rule_quality">Rule Quality</option>
+            <option value="custom">Custom (Python)</option>
+          </select>
+          <select x-model="m.target_field">
+            <template x-for="f in outputFields" :key="f.name">
+              <option :value="f.name" x-text="f.name" :selected="f.name === m.target_field"></option>
+            </template>
+          </select>
+          <div>
+            <input type="range" min="0" max="1" step="0.05" x-model.number="m.weight" style="width:70px;">
+            <span class="weight-display" x-text="m.weight.toFixed(2)"></span>
+          </div>
+          <button class="btn btn-sm btn-danger" @click="removeMetric(idx)">&times;</button>
+        </div>
+
+        <!-- Rule quality config -->
+        <template x-if="m.metric_type === 'rule_quality'">
+          <div class="rule-config">
+            <div class="form-group">
+              <label style="text-transform:none;">Banned Words (one per line)</label>
+              <textarea rows="3"
+                :value="(m.rule_config.banned_words || []).join('\n')"
+                @input="m.rule_config.banned_words = $event.target.value.split('\n').filter(w => w.trim())"
+                placeholder="premium quality&#10;best-in-class&#10;innovative solution"></textarea>
+            </div>
+            <div class="checkbox-row">
+              <input type="checkbox" :checked="m.rule_config.no_passive_voice"
+                @change="m.rule_config.no_passive_voice = $event.target.checked">
+              <label>No passive voice</label>
+            </div>
+            <div class="form-group">
+              <label style="text-transform:none;">Max sentence length (words, 0 = disabled)</label>
+              <input type="number" :value="m.rule_config.max_sentence_length || 0"
+                @input="m.rule_config.max_sentence_length = parseInt($event.target.value) || 0"
+                style="width:100px;">
+            </div>
+          </div>
+        </template>
+
+        <!-- Custom code -->
+        <template x-if="m.metric_type === 'custom'">
+          <div class="rule-config">
+            <label style="text-transform:none;">Python metric function</label>
+            <textarea rows="6" x-model="m.custom_code"
+              placeholder="def metric(example, pred, trace=None):&#10;    expected = str(example.field_name).strip()&#10;    predicted = str(pred.field_name).strip()&#10;    return 1.0 if expected == predicted else 0.0"></textarea>
+          </div>
+        </template>
+      </div>
+    </template>
+    <button class="btn btn-sm" @click="addMetric()">+ Add Metric</button>
+  </div>
+
+  <!-- Training Data -->
+  <div class="card">
+    <div class="card-header">
+      <h2 style="margin:0;">Training Data</h2>
+      <div class="btn-group">
+        <button class="btn btn-sm" @click="addExample()">+ Add Row</button>
+        <button class="btn btn-sm" @click="importCSV()">Import CSV</button>
+      </div>
+    </div>
+
+    <template x-if="mode === 'fresh'">
+      <div class="help">
+        Labeled examples the optimizer learns from. Aim for 30-50 examples covering different cases.
+        The data is automatically split into train/validation/test sets.
+      </div>
+    </template>
+
+    <div class="examples-wrap">
+      <table class="examples-table">
+        <thead>
+          <tr>
+            <th style="width:30px;">#</th>
+            <template x-for="f in task.fields">
+              <th x-text="f.name"></th>
+            </template>
+            <th style="width:40px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(ex, idx) in task.examples" :key="idx">
+            <tr>
+              <td style="color:var(--text-dim);" x-text="idx + 1"></td>
+              <template x-for="f in task.fields">
+                <td>
+                  <textarea x-model="ex[f.name]" :readonly="mode === 'default' && useDefaultData"
+                    rows="1" style="min-height:32px;"></textarea>
+                </td>
+              </template>
+              <td>
+                <button class="btn btn-sm btn-danger" @click="removeExample(idx)"
+                  :disabled="mode === 'default' && useDefaultData">&times;</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <div class="example-count" x-text="exampleSplitInfo"></div>
+  </div>
+
+  <!-- Model Configuration -->
+  <div class="card">
+    <h2>Model Configuration</h2>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Teacher Model (expensive, used for optimization)</label>
+        <input type="text" x-model="teacherModel" list="teacher-models">
+        <datalist id="teacher-models">
+          <template x-for="m in availableModels.teacher">
+            <option :value="m"></option>
+          </template>
+        </datalist>
+      </div>
+      <div class="form-row" style="margin:0;">
+        <div class="form-group">
+          <label>Eval Trials</label>
+          <input type="number" x-model.number="evalTrials" min="1" max="100">
+        </div>
+        <div class="form-group">
+          <label>Threads</label>
+          <input type="number" x-model.number="threads" min="1" max="100">
+        </div>
+      </div>
+    </div>
+
+    <label>Student Models (cheap, deployed in production)</label>
+    <template x-for="(m, idx) in studentModels" :key="idx">
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <input type="text" x-model="studentModels[idx]" list="student-models" style="flex:1;">
+        <button class="btn btn-sm btn-danger" @click="removeStudentModel(idx)"
+          :disabled="studentModels.length <= 1">&times;</button>
+      </div>
+    </template>
+    <datalist id="student-models">
+      <template x-for="m in availableModels.student">
+        <option :value="m"></option>
+      </template>
+    </datalist>
+    <button class="btn btn-sm" @click="addStudentModel()">+ Add Student Model</button>
+  </div>
+
+  <!-- Run Button -->
+  <div style="text-align:center; margin:24px 0;">
+    <button class="btn btn-primary" style="padding:12px 48px; font-size:1rem;"
+      @click="startRun()"
+      :disabled="jobStatus && (jobStatus.status === 'pending' || jobStatus.status === 'running')">
+      Run Optimization
+    </button>
+  </div>
+
+  <!-- Error -->
+  <template x-if="error">
+    <div class="card" style="border-color:var(--danger);">
+      <h2 style="color:var(--danger);">Error</h2>
+      <p style="font-family:var(--mono); font-size:0.85rem;" x-text="error"></p>
+    </div>
+  </template>
+
+  <!-- Progress -->
+  <template x-if="jobStatus && (jobStatus.status === 'pending' || jobStatus.status === 'running')">
+    <div class="card">
+      <h2>Optimization in Progress</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="progress-step" x-text="jobStatus.current_step"></span>
+        <span class="progress-pct" x-text="jobStatus.progress_pct + '%'"></span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="'width:' + jobStatus.progress_pct + '%'"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Results -->
+  <template x-if="results">
+    <div class="card">
+      <h2>Results</h2>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+        Mean of <span x-text="evalTrials"></span> trials at temperature=0 on held-out test set.
+      </p>
+
+      <div style="overflow-x:auto;">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th></th>
+              <template x-for="col in getResultColumns()">
+                <th>
+                  <div x-text="col.label"></div>
+                  <div style="font-size:0.7rem; opacity:0.7;" x-text="col.model"></div>
+                </th>
+              </template>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="metric in getMetricNames()">
+              <tr>
+                <td x-text="metric"></td>
+                <template x-for="(col, ci) in getResultColumns()">
+                  <td :class="{ best: isBest(metric, ci) }" x-text="formatScore(col.scores[metric])"></td>
+                </template>
+              </tr>
+            </template>
+            <tr>
+              <td>latency</td>
+              <template x-for="(col, ci) in getResultColumns()">
+                <td :class="{ best: isFastestLatency(ci) }" x-text="formatLatency(col.latency)"></td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Download prompts -->
+      <div class="download-area">
+        <template x-for="(model, key) in results.students">
+          <button class="btn btn-sm" @click="downloadPrompt(key)">
+            Download prompt: <span x-text="key.split('/').pop()"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+  </template>
+
+</div>
+</body>
+</html>
