@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
+from core.models import get_teacher_models, get_student_models
 from server.schemas import RunRequest, TaskConfigSchema, JobStatus
 from server.jobs import job_manager
 
@@ -66,16 +67,6 @@ def get_prompt(job_id: str, model: str) -> PlainTextResponse:
 @router.get("/models")
 def list_models() -> dict:
     return {
-        "teacher": [
-            "gemini/gemini-3.1-pro-preview",
-            "gemini/gemini-2.5-pro",
-            "openai/gpt-4o",
-            "anthropic/claude-sonnet-4-5-20250929",
-        ],
-        "student": [
-            "gemini/gemini-2.5-flash-lite",
-            "gemini/gemini-3.1-flash-lite-preview",
-            "gemini/gemini-2.5-flash",
-            "openai/gpt-4o-mini",
-        ],
+        "teacher": get_teacher_models(),
+        "student": get_student_models(),
     }

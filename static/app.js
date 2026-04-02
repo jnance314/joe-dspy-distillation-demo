@@ -111,7 +111,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     addStudentModel() {
-      this.studentModels.push('');
+      this.studentModels.push(this.availableModels.student[0]?.id || '');
     },
     removeStudentModel(idx) {
       this.studentModels.splice(idx, 1);
@@ -127,6 +127,13 @@ document.addEventListener('alpine:init', () => {
 
     get outputFields() {
       return this.task.fields.filter(f => f.field_type === 'output');
+    },
+
+    // Model helpers
+    getModelLabel(modelId, list) {
+      const m = list.find(x => x.id === modelId);
+      if (!m) return modelId;
+      return `${m.name} - $${m.input_cost}/$${m.output_cost} per 1M tokens`;
     },
 
     async startRun() {
@@ -206,11 +213,15 @@ document.addEventListener('alpine:init', () => {
       if (!this.results) return [];
       const cols = [];
       const mono = this.results.monolith;
-      cols.push({ label: 'Monolith', model: mono.model.split('/').pop(), scores: mono.scores, latency: mono.latency });
+      cols.push({
+        label: 'Monolith', model: mono.model.split('/').pop(),
+        scores: mono.scores, latency: mono.latency, cost: mono.cost,
+      });
       for (const [model, data] of Object.entries(this.results.students)) {
         const short = model.split('/').pop();
-        cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency });
-        cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency });
+        const cost = data.cost;
+        cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency, cost });
+        cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency, cost });
       }
       return cols;
     },
@@ -234,6 +245,11 @@ document.addEventListener('alpine:init', () => {
       return Math.round(lat.mean).toLocaleString() + 'ms';
     },
 
+    formatCost(cost) {
+      if (!cost || cost.input_cost === null) return '-';
+      return `$${cost.input_cost} / $${cost.output_cost}`;
+    },
+
     isBest(metricName, colIdx) {
       const cols = this.getResultColumns();
       const values = cols.map(c => c.scores[metricName]?.mean || 0);
@@ -246,6 +262,13 @@ document.addEventListener('alpine:init', () => {
       const values = cols.map(c => c.latency?.mean || Infinity);
       const min = Math.min(...values);
       return cols[colIdx].latency?.mean === min;
+    },
+
+    isCheapest(colIdx) {
+      const cols = this.getResultColumns();
+      const values = cols.map(c => c.cost?.input_cost ?? Infinity);
+      const min = Math.min(...values);
+      return (cols[colIdx].cost?.input_cost ?? Infinity) === min && min < Infinity;
     },
   }));
 });

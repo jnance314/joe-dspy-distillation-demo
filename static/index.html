@@ -228,12 +228,12 @@
     <div class="form-row">
       <div class="form-group">
         <label>Teacher Model (expensive, used for optimization)</label>
-        <input type="text" x-model="teacherModel" list="teacher-models">
-        <datalist id="teacher-models">
-          <template x-for="m in availableModels.teacher">
-            <option :value="m"></option>
+        <select x-model="teacherModel">
+          <template x-for="m in availableModels.teacher" :key="m.id">
+            <option :value="m.id" x-text="`${m.name} (${m.provider}) - $${m.input_cost}/$${m.output_cost} per 1M`"
+              :selected="m.id === teacherModel"></option>
           </template>
-        </datalist>
+        </select>
       </div>
       <div class="form-row" style="margin:0;">
         <div class="form-group">
@@ -250,16 +250,16 @@
     <label>Student Models (cheap, deployed in production)</label>
     <template x-for="(m, idx) in studentModels" :key="idx">
       <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <input type="text" x-model="studentModels[idx]" list="student-models" style="flex:1;">
+        <select x-model="studentModels[idx]" style="flex:1;">
+          <template x-for="sm in availableModels.student" :key="sm.id">
+            <option :value="sm.id" x-text="`${sm.name} (${sm.provider}) - $${sm.input_cost}/$${sm.output_cost} per 1M`"
+              :selected="sm.id === studentModels[idx]"></option>
+          </template>
+        </select>
         <button class="btn btn-sm btn-danger" @click="removeStudentModel(idx)"
           :disabled="studentModels.length <= 1">&times;</button>
       </div>
     </template>
-    <datalist id="student-models">
-      <template x-for="m in availableModels.student">
-        <option :value="m"></option>
-      </template>
-    </datalist>
     <button class="btn btn-sm" @click="addStudentModel()">+ Add Student Model</button>
   </div>
 
@@ -330,9 +330,23 @@
                 <td :class="{ best: isFastestLatency(ci) }" x-text="formatLatency(col.latency)"></td>
               </template>
             </tr>
+            <tr>
+              <td>cost (in/out per 1M)</td>
+              <template x-for="(col, ci) in getResultColumns()">
+                <td :class="{ best: isCheapest(ci) }" x-text="formatCost(col.cost)"></td>
+              </template>
+            </tr>
           </tbody>
         </table>
       </div>
+
+      <!-- AI Summary -->
+      <template x-if="results.summary">
+        <div style="margin-top:16px; padding:16px; background:var(--surface2); border-radius:var(--radius); border-left:3px solid var(--accent);">
+          <h3 style="margin:0 0 8px; font-size:0.9rem; color:var(--accent);">AI-Generated Analysis</h3>
+          <p style="font-size:0.85rem; line-height:1.7; white-space:pre-wrap;" x-text="results.summary"></p>
+        </div>
+      </template>
 
       <!-- Download prompts -->
       <div class="download-area">

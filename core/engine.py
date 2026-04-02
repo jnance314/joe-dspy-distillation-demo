@@ -19,6 +19,7 @@ log = logging.getLogger("dspy-demo.engine")
 from core.task_config import TaskConfig
 from core.signature_factory import build_module, build_signature
 from core.metrics_builtin import build_composite_metric
+from core.models import get_model_cost
 
 THREADS = 50
 
@@ -240,11 +241,13 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
     monolith = build_monolith(task_config, trainset)
     mono_scores, mono_latency = evaluate(testset, monolith, composite_fn, num_trials, threads)
 
+    teacher_cost = get_model_cost(teacher_model) or {"input_cost": None, "output_cost": None}
     results = {
         "monolith": {
             "model": teacher_model,
             "scores": {k: {"mean": v[0], "std": v[1]} for k, v in mono_scores.items()},
             "latency": {"mean": mono_latency[0], "std": mono_latency[1]},
+            "cost": teacher_cost,
         },
         "students": {},
     }
@@ -280,6 +283,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         # Export prompt
         prompt = export_prompt(optimized)
 
+        student_cost = get_model_cost(student_model) or {"input_cost": None, "output_cost": None}
         results["students"][student_model] = {
             "naive": {
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in naive_scores.items()},
@@ -289,6 +293,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in opt_scores.items()},
                 "latency": {"mean": opt_latency[0], "std": opt_latency[1]},
             },
+            "cost": student_cost,
             "prompt": prompt,
         }
 
@@ -302,5 +307,68 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
                  data["optimized"]["scores"]["composite"]["mean"] * 100)
     log.info("=" * 60)
 
+    # -- AI-generated summary --
+    progress("Generating AI summary...", 95)
+    results["summary"] = _generate_summary(results, teacher_model)
+
     progress("Done!", 100)
     return results
+
+
+def _generate_summary(results: dict, teacher_model: str) -> str:
+    """Use the teacher model to generate a plain-English interpretation of results."""
+    try:
+        log.info("Generating AI summary with %s", teacher_model)
+        summary_lm = dspy.LM(teacher_model, temperature=0.3)
+
+        # Build a text representation of the results for the LM
+        lines = []
+        mono = results["monolith"]
+        lines.append(f"Monolith ({mono['model'].split('/')[-1]}):")
+        lines.append(f"  Composite: {mono['scores']['composite']['mean']:.1%}")
+        lines.append(f"  Latency: {mono['latency']['mean']:.0f}ms")
+        if mono.get("cost", {}).get("input_cost"):
+            lines.append(f"  Cost: ${mono['cost']['input_cost']}/M input, ${mono['cost']['output_cost']}/M output")
+
+        for model, data in results["students"].items():
+            short = model.split("/")[-1]
+            cost = data.get("cost", {})
+            cost_str = f"${cost['input_cost']}/M input, ${cost['output_cost']}/M output" if cost.get("input_cost") else "unknown"
+
+            lines.append(f"\n{short} (cost: {cost_str}):")
+            lines.append(f"  Naive composite: {data['naive']['scores']['composite']['mean']:.1%}, latency: {data['naive']['latency']['mean']:.0f}ms")
+            lines.append(f"  DSPy optimized composite: {data['optimized']['scores']['composite']['mean']:.1%}, latency: {data['optimized']['latency']['mean']:.0f}ms")
+
+            for metric_name in data["naive"]["scores"]:
+                if metric_name == "composite":
+                    continue
+                naive_val = data["naive"]["scores"][metric_name]["mean"]
+                opt_val = data["optimized"]["scores"][metric_name]["mean"]
+                lines.append(f"  {metric_name}: naive={naive_val:.1%} -> optimized={opt_val:.1%}")
+
+        results_text = "\n".join(lines)
+
+        prompt = f"""You are analyzing the results of a prompt optimization experiment.
+The goal was to see if a cheap AI model can match an expensive model's performance
+after automatic prompt optimization with DSPy's MIPROv2.
+
+Here are the results:
+
+{results_text}
+
+Write a 3-4 paragraph summary for a technical audience (developers and engineering managers) that:
+1. States the key finding clearly in the first sentence
+2. Highlights the most impressive improvements (which metrics improved most, by how much)
+3. Compares cost and latency tradeoffs between approaches
+4. Gives a concrete recommendation on which model to deploy and why
+
+Be direct and specific with numbers. No filler. No hedging."""
+
+        dspy.configure(lm=summary_lm)
+        result = dspy.Predict("prompt -> summary")(prompt=prompt)
+        log.info("AI summary generated (%d chars)", len(result.summary))
+        return result.summary
+
+    except Exception as e:
+        log.warning("Failed to generate AI summary: %s", e)
+        return ""
