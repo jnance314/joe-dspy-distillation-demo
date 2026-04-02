@@ -42,10 +42,15 @@ class RunRequest(BaseModel):
     threads: int = 50
 
 
-class CustomEvalRequest(BaseModel):
+class EditedColumnSchema(BaseModel):
+    label: str  # "Monolith", "Naive", "DSPy"
+    model: str
+    edited_prompt: str  # Full exported prompt text (may be edited by user)
+
+
+class EditedEvalRequest(BaseModel):
     task: TaskConfigSchema
-    custom_guidelines: str
-    model: str = "gemini/gemini-2.5-flash-lite"
+    columns: list[EditedColumnSchema]
     num_trials: int = 3
     threads: int = 50
 

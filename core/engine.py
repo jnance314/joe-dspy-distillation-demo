@@ -206,6 +206,82 @@ def export_prompt(optimized_module) -> str:
     return "\n".join(lines)
 
 
+def parse_exported_prompt(text: str) -> list[dict]:
+    """Parse an exported prompt back into stages with instructions and demos.
+
+    Returns a list of dicts, one per stage:
+        [{"stage": "check > predict", "instructions": "...", "demos": [{...}, ...]}]
+    """
+    import re
+
+    stages = []
+    # Split by stage markers
+    stage_blocks = re.split(r"== STAGE: (.+?) ==", text)
+
+    # stage_blocks: ['header...', 'stage_name', 'stage_content', 'stage_name', 'stage_content', ...]
+    i = 1
+    while i < len(stage_blocks) - 1:
+        stage_name = stage_blocks[i].strip()
+        stage_content = stage_blocks[i + 1]
+        i += 2
+
+        instructions = ""
+        demos = []
+
+        # Extract instructions
+        instr_match = re.search(r"-- INSTRUCTIONS --\s*\n(.*?)(?=--|== |$)", stage_content, re.DOTALL)
+        if instr_match:
+            instructions = instr_match.group(1).strip()
+
+        # Extract demos
+        demo_blocks = re.split(r"--- Example \d+ ---", stage_content)
+        for block in demo_blocks[1:]:  # skip text before first example
+            demo = {}
+            # Stop at next section marker
+            block = re.split(r"\n(?=--|== )", block)[0]
+            for line in block.strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                colon_idx = line.find(": ")
+                if colon_idx > 0:
+                    key = line[:colon_idx].strip()
+                    val = line[colon_idx + 2:].strip()
+                    demo[key] = val
+            if demo:
+                demos.append(demo)
+
+        stages.append({
+            "stage": stage_name,
+            "instructions": instructions,
+            "demos": demos,
+        })
+
+    return stages
+
+
+def apply_edited_prompt(module, parsed_stages: list[dict]):
+    """Apply parsed prompt edits to a module's predictors.
+
+    Matches stages to predictors by order (first stage -> first predictor, etc.).
+    Sets instructions and demos on each predictor.
+    """
+    predictors = list(module.named_predictors())
+
+    for i, stage in enumerate(parsed_stages):
+        if i >= len(predictors):
+            break
+        _name, predictor_obj = predictors[i]
+        pred = (predictor_obj.predict
+                if hasattr(predictor_obj, "predict")
+                else predictor_obj)
+
+        if stage["instructions"]:
+            pred.signature = pred.signature.with_instructions(stage["instructions"])
+
+        pred.demos = stage["demos"]
+
+
 # -- Full pipeline -----------------------------------------------------------
 
 def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
@@ -256,12 +332,14 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
     mono_scores, mono_latency = evaluate(testset, monolith, composite_fn, num_trials, threads)
 
     teacher_cost = get_model_cost(teacher_model) or {"input_cost": None, "output_cost": None}
+    monolith_prompt = export_prompt(monolith)
     results = {
         "monolith": {
             "model": teacher_model,
             "scores": {k: {"mean": v[0], "std": v[1]} for k, v in mono_scores.items()},
             "latency": {"mean": mono_latency[0], "std": mono_latency[1]},
             "cost": teacher_cost,
+            "prompt": monolith_prompt,
         },
         "students": {},
     }
@@ -283,6 +361,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         dspy.configure(lm=student_lm)
         naive_module = get_module(task_config)
         naive_scores, naive_latency = evaluate(testset, naive_module, composite_fn, num_trials, threads)
+        naive_prompt = export_prompt(naive_module)
 
         # Optimize
         progress(f"Optimizing {short} with MIPROv2...", base_pct + int(20 / n_students))
@@ -302,6 +381,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
             "naive": {
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in naive_scores.items()},
                 "latency": {"mean": naive_latency[0], "std": naive_latency[1]},
+                "prompt": naive_prompt,
             },
             "optimized": {
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in opt_scores.items()},

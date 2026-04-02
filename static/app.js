@@ -21,11 +21,12 @@ document.addEventListener('alpine:init', () => {
     results: null,
     error: null,
 
-    // Custom prompt eval state
-    customGuidelines: {},   // {modelId: "edited guidelines text"}
-    customResults: {},      // {modelId: {scores, latency, cost}}
-    customLoading: {},      // {modelId: true/false}
-    customExpanded: {},     // {modelId: true/false}
+    // Edited prompt re-evaluation state
+    editedPrompts: {},      // {columnKey: "edited prompt text"}
+    originalPrompts: {},    // {columnKey: "original prompt text"} (for reset)
+    editedResults: null,    // Table 2 columns array
+    editedLoading: false,
+    activeEditTab: null,    // which column's editor is open
 
     async init() {
       const [modelsRes, tasksRes] = await Promise.all([
@@ -44,10 +45,10 @@ document.addEventListener('alpine:init', () => {
       this.results = null;
       this.jobStatus = null;
       this.error = null;
-      this.customGuidelines = {};
-      this.customResults = {};
-      this.customLoading = {};
-      this.customExpanded = {};
+      this.editedPrompts = {};
+      this.originalPrompts = {};
+      this.editedResults = null;
+      this.activeEditTab = null;
       const data = await fetch(`/api/tasks/${taskName}`).then(r => r.json());
       this.task = data;
     },
@@ -120,19 +121,15 @@ document.addEventListener('alpine:init', () => {
       return this.task.fields.filter(f => f.field_type === 'output');
     },
 
-    // Model helpers
-    getModelLabel(modelId, list) {
-      const m = list.find(x => x.id === modelId);
-      if (!m) return modelId;
-      return `${m.name} - $${m.input_cost}/$${m.output_cost} per 1M tokens`;
-    },
+    // -- Run experiment -------------------------------------------------------
 
     async startRun() {
       this.error = null;
       this.results = null;
-      this.customResults = {};
-      this.customLoading = {};
-      this.customExpanded = {};
+      this.editedPrompts = {};
+      this.originalPrompts = {};
+      this.editedResults = null;
+      this.activeEditTab = null;
       this.jobStatus = { status: 'pending', current_step: 'Starting...', progress_pct: 0 };
 
       const payload = {
@@ -181,6 +178,7 @@ document.addEventListener('alpine:init', () => {
         if (status.status === 'completed') {
           clearInterval(this.polling);
           this.results = status.results;
+          this._initEditedPrompts();
         } else if (status.status === 'failed') {
           clearInterval(this.polling);
           this.error = status.error;
@@ -190,60 +188,106 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // Initialize custom guidelines when results arrive
-    initCustomForModel(modelId) {
-      if (!this.customGuidelines[modelId]) {
-        this.customGuidelines[modelId] = this.task.guidelines;
+    // -- Edited prompt system -------------------------------------------------
+
+    _initEditedPrompts() {
+      if (!this.results) return;
+
+      // Monolith
+      const monoPrompt = this.results.monolith.prompt || '';
+      this.editedPrompts['monolith'] = monoPrompt;
+      this.originalPrompts['monolith'] = monoPrompt;
+
+      // Per student: naive + dspy
+      for (const [model, data] of Object.entries(this.results.students)) {
+        const naivePrompt = data.naive?.prompt || '';
+        const dspyPrompt = data.prompt || '';
+        this.editedPrompts[`naive:${model}`] = naivePrompt;
+        this.originalPrompts[`naive:${model}`] = naivePrompt;
+        this.editedPrompts[`dspy:${model}`] = dspyPrompt;
+        this.originalPrompts[`dspy:${model}`] = dspyPrompt;
       }
+
+      // Default to first tab
+      const keys = this.getEditTabKeys();
+      if (keys.length > 0) this.activeEditTab = keys[0];
     },
 
-    toggleCustomExpanded(modelId) {
-      this.customExpanded[modelId] = !this.customExpanded[modelId];
-      this.initCustomForModel(modelId);
+    getEditTabKeys() {
+      if (!this.results) return [];
+      const keys = ['monolith'];
+      for (const model of Object.keys(this.results.students)) {
+        keys.push(`naive:${model}`);
+        keys.push(`dspy:${model}`);
+      }
+      return keys;
     },
 
-    async evalCustom(modelId) {
-      this.customLoading[modelId] = true;
+    getEditTabLabel(key) {
+      if (key === 'monolith') return 'Monolith';
+      const [type, model] = [key.split(':')[0], key.split(':').slice(1).join(':')];
+      const short = model.split('/').pop();
+      if (type === 'naive') return `Naive (${short})`;
+      return `DSPy (${short})`;
+    },
+
+    getEditTabModel(key) {
+      if (key === 'monolith') return this.results.monolith.model;
+      return key.split(':').slice(1).join(':');
+    },
+
+    resetPrompt(key) {
+      this.editedPrompts[key] = this.originalPrompts[key] || '';
+    },
+
+    async evalEdited() {
+      this.editedLoading = true;
+      this.editedResults = null;
       this.error = null;
 
+      const columns = this.getEditTabKeys().map(key => ({
+        label: this.getEditTabLabel(key),
+        model: this.getEditTabModel(key),
+        edited_prompt: this.editedPrompts[key] || '',
+      }));
+
       try {
-        const res = await fetch('/api/eval-custom', {
+        const res = await fetch('/api/eval-edited', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             task: this.task,
-            custom_guidelines: this.customGuidelines[modelId],
-            model: modelId,
+            columns: columns,
             num_trials: this.evalTrials,
             threads: this.threads,
           }),
         });
         if (!res.ok) {
           const err = await res.json();
-          this.error = err.detail || 'Custom eval failed';
-          this.customLoading[modelId] = false;
+          this.error = err.detail || 'Re-evaluation failed';
+          this.editedLoading = false;
           return;
         }
         const data = await res.json();
-        this.customResults[modelId] = data;
+        this.editedResults = data.columns;
       } catch (e) {
         this.error = e.message;
       }
-      this.customLoading[modelId] = false;
+      this.editedLoading = false;
     },
+
+    // -- Prompt copy/download -------------------------------------------------
 
     async copyPrompt(model) {
       const prompt = this.results?.students?.[model]?.prompt;
       if (!prompt) return;
       try {
         await navigator.clipboard.writeText(prompt);
-        // Brief visual feedback
         const btn = event.target;
         const orig = btn.textContent;
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = orig; }, 1500);
       } catch (e) {
-        // Fallback for non-HTTPS contexts
         const ta = document.createElement('textarea');
         ta.value = prompt;
         document.body.appendChild(ta);
@@ -265,6 +309,8 @@ document.addEventListener('alpine:init', () => {
       URL.revokeObjectURL(url);
     },
 
+    // -- Table rendering helpers ----------------------------------------------
+
     getResultColumns() {
       if (!this.results) return [];
       const cols = [];
@@ -278,10 +324,6 @@ document.addEventListener('alpine:init', () => {
         const cost = data.cost;
         cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency, cost });
         cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency, cost });
-        if (this.customResults[model]) {
-          const cr = this.customResults[model];
-          cols.push({ label: 'Custom', model: short, scores: cr.scores, latency: cr.latency, cost: cr.cost || cost });
-        }
       }
       return cols;
     },
@@ -310,25 +352,43 @@ document.addEventListener('alpine:init', () => {
       return `$${cost.input_cost} / $${cost.output_cost}`;
     },
 
-    isBest(metricName, colIdx) {
-      const cols = this.getResultColumns();
+    isBest(metricName, colIdx, cols) {
       const values = cols.map(c => c.scores[metricName]?.mean || 0);
       const max = Math.max(...values);
       return cols[colIdx].scores[metricName]?.mean === max && max > 0;
     },
 
-    isFastestLatency(colIdx) {
-      const cols = this.getResultColumns();
+    isFastestLatency(colIdx, cols) {
       const values = cols.map(c => c.latency?.mean || Infinity);
       const min = Math.min(...values);
       return cols[colIdx].latency?.mean === min;
     },
 
-    isCheapest(colIdx) {
-      const cols = this.getResultColumns();
+    isCheapest(colIdx, cols) {
       const values = cols.map(c => c.cost?.input_cost ?? Infinity);
       const min = Math.min(...values);
       return (cols[colIdx].cost?.input_cost ?? Infinity) === min && min < Infinity;
+    },
+
+    // Delta helper for Table 2 vs Table 1
+    getDelta(editedCol, metricName) {
+      const origCols = this.getResultColumns();
+      const orig = origCols.find(c => c.label === editedCol.label && c.model === editedCol.model);
+      if (!orig || !orig.scores[metricName] || !editedCol.scores[metricName]) return null;
+      return editedCol.scores[metricName].mean - orig.scores[metricName].mean;
+    },
+
+    formatDelta(delta) {
+      if (delta === null || delta === undefined) return '';
+      const sign = delta >= 0 ? '+' : '';
+      return `${sign}${(delta * 100).toFixed(1)}%`;
+    },
+
+    deltaClass(delta) {
+      if (delta === null || delta === undefined) return '';
+      if (delta > 0.001) return 'color: var(--success);';
+      if (delta < -0.001) return 'color: var(--danger);';
+      return 'color: var(--text-dim);';
     },
   }));
 });

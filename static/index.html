@@ -265,10 +265,10 @@
     </div>
   </template>
 
-  <!-- Results -->
+  <!-- Table 1: Original Results -->
   <template x-if="results">
     <div class="card">
-      <h2>Results</h2>
+      <h2>Table 1: Original Results</h2>
       <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
         Mean of <span x-text="evalTrials"></span> trials at temperature=0 on held-out test set.
       </p>
@@ -291,20 +291,20 @@
               <tr>
                 <td x-text="metric"></td>
                 <template x-for="(col, ci) in getResultColumns()">
-                  <td :class="{ best: isBest(metric, ci) }" x-text="formatScore(col.scores[metric])"></td>
+                  <td :class="{ best: isBest(metric, ci, getResultColumns()) }" x-text="formatScore(col.scores[metric])"></td>
                 </template>
               </tr>
             </template>
             <tr>
               <td>latency</td>
               <template x-for="(col, ci) in getResultColumns()">
-                <td :class="{ best: isFastestLatency(ci) }" x-text="formatLatency(col.latency)"></td>
+                <td :class="{ best: isFastestLatency(ci, getResultColumns()) }" x-text="formatLatency(col.latency)"></td>
               </template>
             </tr>
             <tr>
               <td>cost (in/out per 1M)</td>
               <template x-for="(col, ci) in getResultColumns()">
-                <td :class="{ best: isCheapest(ci) }" x-text="formatCost(col.cost)"></td>
+                <td :class="{ best: isCheapest(ci, getResultColumns()) }" x-text="formatCost(col.cost)"></td>
               </template>
             </tr>
           </tbody>
@@ -318,59 +318,114 @@
           <p style="font-size:0.85rem; line-height:1.7; white-space:pre-wrap;" x-text="results.summary"></p>
         </div>
       </template>
+    </div>
+  </template>
 
-      <!-- Custom Prompt Eval per student model -->
-      <template x-for="(data, modelId) in results.students" :key="'custom-' + modelId">
-        <div style="margin-top:16px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;">
-          <div @click="toggleCustomExpanded(modelId)"
-            style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:var(--surface2); cursor:pointer;">
-            <h3 style="margin:0; font-size:0.9rem;">
-              Custom Prompt Eval: <span style="color:var(--accent);" x-text="modelId.split('/').pop()"></span>
-              <template x-if="customResults[modelId]">
-                <span style="color:var(--success); font-size:0.8rem; margin-left:8px;"
-                  x-text="(customResults[modelId].scores.composite.mean * 100).toFixed(1) + '% composite'"></span>
-              </template>
-            </h3>
-            <span style="color:var(--text-dim); font-size:0.8rem;" x-text="customExpanded[modelId] ? 'Collapse' : 'Expand'"></span>
+  <!-- Edit & Re-evaluate -->
+  <template x-if="results">
+    <div class="card">
+      <h2>Edit & Re-evaluate</h2>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+        Edit any column's prompt below, then re-evaluate to see if your changes help or hurt.
+        Table 2 will show the results of your edits alongside the originals.
+      </p>
+
+      <!-- Tabs -->
+      <div class="mode-toggle" style="flex-wrap:wrap; margin-bottom:12px;">
+        <template x-for="key in getEditTabKeys()" :key="key">
+          <button class="btn" :class="{ active: activeEditTab === key }"
+            @click="activeEditTab = key" x-text="getEditTabLabel(key)"></button>
+        </template>
+      </div>
+
+      <!-- Tab content -->
+      <template x-for="key in getEditTabKeys()" :key="'editor-' + key">
+        <div x-show="activeEditTab === key">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label style="margin:0;" x-text="getEditTabLabel(key) + ' Prompt'"></label>
+            <button class="btn btn-sm" @click="resetPrompt(key)">Reset to Original</button>
           </div>
-          <template x-if="customExpanded[modelId]">
-            <div style="padding:16px;">
-              <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:8px;">
-                Edit the guidelines below and evaluate. This runs the student model zero-shot with your custom prompt -- no optimization.
-                Compare against the DSPy column to see if manual prompt engineering can beat automatic optimization.
-              </p>
-              <label>Custom Guidelines</label>
-              <textarea rows="10"
-                style="font-family:var(--mono); font-size:0.8rem;"
-                x-model="customGuidelines[modelId]"
-                :placeholder="task.guidelines"></textarea>
-              <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-                <button class="btn btn-primary btn-sm" @click="evalCustom(modelId)"
-                  :disabled="customLoading[modelId]">
-                  <template x-if="!customLoading[modelId]">
-                    <span>Evaluate Custom</span>
-                  </template>
-                  <template x-if="customLoading[modelId]">
-                    <span>Evaluating...</span>
-                  </template>
-                </button>
-                <template x-if="customResults[modelId]">
-                  <span style="font-size:0.8rem; color:var(--success);">
-                    Result added to comparison table above
-                  </span>
-                </template>
-              </div>
-            </div>
-          </template>
+          <textarea rows="14"
+            style="width:100%; font-family:var(--mono); font-size:0.75rem; line-height:1.5;"
+            x-model="editedPrompts[key]"></textarea>
         </div>
       </template>
 
-      <!-- Prompt viewers per student model -->
+      <!-- Re-evaluate button -->
+      <div style="margin-top:12px; display:flex; gap:12px; align-items:center;">
+        <button class="btn btn-primary" @click="evalEdited()" :disabled="editedLoading">
+          <span x-text="editedLoading ? 'Re-evaluating...' : 'Re-evaluate All Edits'"></span>
+        </button>
+        <template x-if="editedResults">
+          <span style="font-size:0.8rem; color:var(--success);">Results below (Table 2)</span>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- Table 2: Edited Results -->
+  <template x-if="editedResults">
+    <div class="card">
+      <h2>Table 2: After Edits</h2>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+        Results with your edited prompts. <span style="color:var(--success);">Green</span> = improved vs Table 1,
+        <span style="color:var(--danger);">red</span> = degraded.
+      </p>
+
+      <div style="overflow-x:auto;">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th></th>
+              <template x-for="col in editedResults">
+                <th>
+                  <div x-text="col.label"></div>
+                  <div style="font-size:0.7rem; opacity:0.7;" x-text="col.model"></div>
+                </th>
+              </template>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="metric in getMetricNames()">
+              <tr>
+                <td x-text="metric"></td>
+                <template x-for="(col, ci) in editedResults">
+                  <td>
+                    <span x-text="formatScore(col.scores[metric])"></span>
+                    <span style="font-size:0.7rem; margin-left:4px;"
+                      :style="deltaClass(getDelta(col, metric))"
+                      x-text="formatDelta(getDelta(col, metric))"></span>
+                  </td>
+                </template>
+              </tr>
+            </template>
+            <tr>
+              <td>latency</td>
+              <template x-for="(col, ci) in editedResults">
+                <td x-text="formatLatency(col.latency)"></td>
+              </template>
+            </tr>
+            <tr>
+              <td>cost (in/out per 1M)</td>
+              <template x-for="(col, ci) in editedResults">
+                <td x-text="formatCost(col.cost)"></td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+
+  <!-- Production Prompt Viewers -->
+  <template x-if="results">
+    <div class="card">
+      <h2>Production Prompts</h2>
       <template x-for="(data, modelId) in results.students" :key="'prompt-' + modelId">
-        <div style="margin-top:16px;">
+        <div style="margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <h3 style="margin:0; font-size:0.9rem;">
-              Production Prompt: <span style="color:var(--accent);" x-text="modelId.split('/').pop()"></span>
+              <span style="color:var(--accent);" x-text="modelId.split('/').pop()"></span>
             </h3>
             <div class="btn-group">
               <button class="btn btn-sm" @click="copyPrompt(modelId)">Copy to Clipboard</button>
@@ -378,7 +433,7 @@
             </div>
           </div>
           <textarea readonly
-            style="width:100%; min-height:200px; max-height:500px; font-family:var(--mono); font-size:0.75rem; line-height:1.5; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:12px; color:var(--text); resize:vertical;"
+            style="width:100%; min-height:150px; max-height:400px; font-family:var(--mono); font-size:0.75rem; line-height:1.5; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:12px; color:var(--text); resize:vertical;"
             x-text="data.prompt || 'No prompt generated'"></textarea>
         </div>
       </template>
