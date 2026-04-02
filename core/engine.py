@@ -5,7 +5,7 @@ Extracted from demo.py — handles evaluation, optimization, prompt export,
 and the full comparison pipeline. Works with any TaskConfig.
 """
 
-import json
+import logging
 import math
 import random
 import time
@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 import dspy
+
+log = logging.getLogger("dspy-demo.engine")
 
 from core.task_config import TaskConfig
 from core.signature_factory import build_module, build_signature
@@ -33,10 +35,12 @@ def split_examples(task_config: TaskConfig) -> tuple[list, list, list]:
     n = len(examples)
     n_train = max(1, round(n * task_config.train_ratio))
     n_val = max(1, round(n * task_config.val_ratio))
-    # test gets the remainder
     train_dicts = examples[:n_train]
     val_dicts = examples[n_train:n_train + n_val]
     test_dicts = examples[n_train + n_val:]
+
+    log.info("Data split: %d train / %d val / %d test (from %d total)",
+             len(train_dicts), len(val_dicts), len(test_dicts), n)
 
     def to_dspy(dicts):
         result = []
@@ -91,17 +95,26 @@ def evaluate_once(dataset, program, composite_fn, threads=THREADS):
 
 def evaluate(dataset, program, composite_fn, num_trials=10, threads=THREADS):
     """Multi-trial evaluation. Returns {metric: (mean, stddev)}, (lat_mean, lat_stddev)."""
+    log.info("Starting evaluation: %d trials x %d examples (%d threads)",
+             num_trials, len(dataset), threads)
+    t0 = time.perf_counter()
     all_scores = {}
     all_latencies = []
 
-    for _ in range(num_trials):
+    for trial in range(num_trials):
         scores, latency = evaluate_once(dataset, program, composite_fn, threads)
         all_latencies.append(latency)
         for k, v in scores.items():
             all_scores.setdefault(k, []).append(v)
+        if (trial + 1) % max(1, num_trials // 5) == 0 or trial == num_trials - 1:
+            log.info("  Trial %d/%d done (composite: %.1f%%, latency: %.0fms)",
+                     trial + 1, num_trials, scores.get("composite", 0) * 100, latency)
 
+    elapsed = time.perf_counter() - t0
     agg = {k: (sum(v) / len(v), _stddev(v)) for k, v in all_scores.items()}
     lat_agg = (sum(all_latencies) / len(all_latencies), _stddev(all_latencies))
+    log.info("Evaluation complete in %.1fs -- composite: %.1f%% +/- %.1f%%, avg latency: %.0fms",
+             elapsed, agg["composite"][0] * 100, agg["composite"][1] * 100, lat_agg[0])
     return agg, lat_agg
 
 
@@ -123,6 +136,9 @@ def build_monolith(task_config: TaskConfig, trainset: list) -> dspy.Module:
 def optimize(task_config: TaskConfig, composite_fn, student_lm, teacher_lm,
              trainset, valset, threads=THREADS):
     """Run MIPROv2 optimization. Returns the optimized module."""
+    log.info("Starting MIPROv2 optimization (auto=light, %d train, %d val, %d threads)",
+             len(trainset), len(valset), threads)
+    t0 = time.perf_counter()
     dspy.configure(lm=student_lm)
     optimizer = dspy.MIPROv2(
         metric=composite_fn,
@@ -134,7 +150,10 @@ def optimize(task_config: TaskConfig, composite_fn, student_lm, teacher_lm,
         verbose=False,
     )
     module = build_module(task_config)
-    return optimizer.compile(module, trainset=trainset, valset=valset, minibatch_size=10)
+    result = optimizer.compile(module, trainset=trainset, valset=valset, minibatch_size=10)
+    elapsed = time.perf_counter() - t0
+    log.info("MIPROv2 optimization complete in %.1fs", elapsed)
+    return result
 
 
 # -- Prompt export -----------------------------------------------------------
@@ -193,10 +212,19 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         }
     """
     def progress(step: str, pct: int):
+        log.info("[%3d%%] %s", pct, step)
         if on_progress:
             on_progress(step, pct)
 
+    log.info("=" * 60)
+    log.info("PIPELINE START: task=%s, teacher=%s, students=%s, trials=%d",
+             task_config.name, teacher_model, student_models, num_trials)
+    log.info("=" * 60)
+
     composite_fn = build_composite_metric(task_config.metrics)
+    log.info("Composite metric built: %s",
+             ", ".join(f"{n} (w={w:.2f})" for n, _, w in composite_fn.sub_metrics))
+
     trainset, valset, testset = split_examples(task_config)
 
     progress("Splitting data...", 5)
@@ -204,6 +232,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
     # Configure LMs
     teacher_lm = dspy.LM(teacher_model, cache=False, temperature=0)
     teacher_lm_cached = dspy.LM(teacher_model, temperature=0)
+    log.info("LMs configured: teacher=%s (cache=off for eval), cached teacher for optimization", teacher_model)
 
     # -- Monolith baseline --
     progress(f"Evaluating monolith ({teacher_model.split('/')[-1]})...", 10)
@@ -220,10 +249,15 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         "students": {},
     }
 
+    log.info("Monolith composite: %.1f%%", mono_scores["composite"][0] * 100)
+
     # -- Per-student: naive + optimize + eval --
     n_students = len(student_models)
     for i, student_model in enumerate(student_models):
         short = student_model.split("/")[-1]
+        log.info("-" * 40)
+        log.info("Student %d/%d: %s", i + 1, n_students, student_model)
+        log.info("-" * 40)
         student_lm = dspy.LM(student_model, cache=False, temperature=0)
         base_pct = 15 + int(i * 80 / n_students)
 
@@ -257,6 +291,16 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
             },
             "prompt": prompt,
         }
+
+    log.info("=" * 60)
+    log.info("PIPELINE COMPLETE")
+    log.info("  Monolith: %.1f%% composite", mono_scores["composite"][0] * 100)
+    for model, data in results["students"].items():
+        short = model.split("/")[-1]
+        log.info("  %s naive: %.1f%% | optimized: %.1f%%",
+                 short, data["naive"]["scores"]["composite"]["mean"] * 100,
+                 data["optimized"]["scores"]["composite"]["mean"] * 100)
+    log.info("=" * 60)
 
     progress("Done!", 100)
     return results

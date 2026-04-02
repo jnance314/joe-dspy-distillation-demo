@@ -1,12 +1,16 @@
 """Background job manager for DSPy optimization runs."""
 
+import logging
 import threading
+import time
 import traceback
 import uuid
 
 from core.task_config import TaskConfig, FieldDef, MetricDef
 from core.engine import run_full_pipeline
 from server.schemas import RunRequest, JobStatus
+
+log = logging.getLogger("dspy-demo.jobs")
 
 
 class JobManager:
@@ -30,6 +34,10 @@ class JobManager:
         )
         self._prompts[job_id] = {}
 
+        log.info("Job %s created: task=%s, teacher=%s, students=%s, trials=%d",
+                 job_id, request.task.name, request.teacher_model,
+                 request.student_models, request.num_eval_trials)
+
         thread = threading.Thread(target=self._run, args=(job_id, request), daemon=True)
         self._running_thread = thread
         thread.start()
@@ -49,6 +57,8 @@ class JobManager:
 
     def _run(self, job_id: str, request: RunRequest):
         self._update(job_id, status="running")
+        log.info("Job %s started", job_id)
+        t0 = time.perf_counter()
 
         try:
             task_config = TaskConfig(
@@ -80,10 +90,15 @@ class JobManager:
                 if "prompt" in data:
                     self._prompts[job_id][model] = data["prompt"]
 
+            elapsed = time.perf_counter() - t0
+            log.info("Job %s completed in %.1fs", job_id, elapsed)
+
             self._update(job_id, status="completed", progress_pct=100,
                          current_step="Done!", results=results)
 
         except Exception as e:
+            elapsed = time.perf_counter() - t0
+            log.error("Job %s failed after %.1fs: %s: %s", job_id, elapsed, type(e).__name__, e)
             self._update(job_id, status="failed", error=f"{type(e).__name__}: {e}",
                          current_step="Failed")
             traceback.print_exc()
