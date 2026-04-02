@@ -319,8 +319,54 @@
         </div>
       </template>
 
+      <!-- Custom Prompt Eval per student model -->
+      <template x-for="(data, modelId) in results.students" :key="'custom-' + modelId">
+        <div style="margin-top:16px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;">
+          <div @click="toggleCustomExpanded(modelId)"
+            style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:var(--surface2); cursor:pointer;">
+            <h3 style="margin:0; font-size:0.9rem;">
+              Custom Prompt Eval: <span style="color:var(--accent);" x-text="modelId.split('/').pop()"></span>
+              <template x-if="customResults[modelId]">
+                <span style="color:var(--success); font-size:0.8rem; margin-left:8px;"
+                  x-text="(customResults[modelId].scores.composite.mean * 100).toFixed(1) + '% composite'"></span>
+              </template>
+            </h3>
+            <span style="color:var(--text-dim); font-size:0.8rem;" x-text="customExpanded[modelId] ? 'Collapse' : 'Expand'"></span>
+          </div>
+          <template x-if="customExpanded[modelId]">
+            <div style="padding:16px;">
+              <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:8px;">
+                Edit the guidelines below and evaluate. This runs the student model zero-shot with your custom prompt -- no optimization.
+                Compare against the DSPy column to see if manual prompt engineering can beat automatic optimization.
+              </p>
+              <label>Custom Guidelines</label>
+              <textarea rows="10"
+                style="font-family:var(--mono); font-size:0.8rem;"
+                x-model="customGuidelines[modelId]"
+                :placeholder="task.guidelines"></textarea>
+              <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+                <button class="btn btn-primary btn-sm" @click="evalCustom(modelId)"
+                  :disabled="customLoading[modelId]">
+                  <template x-if="!customLoading[modelId]">
+                    <span>Evaluate Custom</span>
+                  </template>
+                  <template x-if="customLoading[modelId]">
+                    <span>Evaluating...</span>
+                  </template>
+                </button>
+                <template x-if="customResults[modelId]">
+                  <span style="font-size:0.8rem; color:var(--success);">
+                    Result added to comparison table above
+                  </span>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
       <!-- Prompt viewers per student model -->
-      <template x-for="(data, modelId) in results.students" :key="modelId">
+      <template x-for="(data, modelId) in results.students" :key="'prompt-' + modelId">
         <div style="margin-top:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <h3 style="margin:0; font-size:0.9rem;">

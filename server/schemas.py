@@ -42,6 +42,14 @@ class RunRequest(BaseModel):
     threads: int = 50
 
 
+class CustomEvalRequest(BaseModel):
+    task: TaskConfigSchema
+    custom_guidelines: str
+    model: str = "gemini/gemini-2.5-flash-lite"
+    num_trials: int = 3
+    threads: int = 50
+
+
 class JobStatus(BaseModel):
     job_id: str
     status: str  # pending, running, completed, failed

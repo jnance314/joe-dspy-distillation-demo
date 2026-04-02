@@ -21,6 +21,12 @@ document.addEventListener('alpine:init', () => {
     results: null,
     error: null,
 
+    // Custom prompt eval state
+    customGuidelines: {},   // {modelId: "edited guidelines text"}
+    customResults: {},      // {modelId: {scores, latency, cost}}
+    customLoading: {},      // {modelId: true/false}
+    customExpanded: {},     // {modelId: true/false}
+
     async init() {
       const [modelsRes, tasksRes] = await Promise.all([
         fetch('/api/models').then(r => r.json()),
@@ -38,6 +44,10 @@ document.addEventListener('alpine:init', () => {
       this.results = null;
       this.jobStatus = null;
       this.error = null;
+      this.customGuidelines = {};
+      this.customResults = {};
+      this.customLoading = {};
+      this.customExpanded = {};
       const data = await fetch(`/api/tasks/${taskName}`).then(r => r.json());
       this.task = data;
     },
@@ -120,6 +130,9 @@ document.addEventListener('alpine:init', () => {
     async startRun() {
       this.error = null;
       this.results = null;
+      this.customResults = {};
+      this.customLoading = {};
+      this.customExpanded = {};
       this.jobStatus = { status: 'pending', current_step: 'Starting...', progress_pct: 0 };
 
       const payload = {
@@ -177,6 +190,48 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    // Initialize custom guidelines when results arrive
+    initCustomForModel(modelId) {
+      if (!this.customGuidelines[modelId]) {
+        this.customGuidelines[modelId] = this.task.guidelines;
+      }
+    },
+
+    toggleCustomExpanded(modelId) {
+      this.customExpanded[modelId] = !this.customExpanded[modelId];
+      this.initCustomForModel(modelId);
+    },
+
+    async evalCustom(modelId) {
+      this.customLoading[modelId] = true;
+      this.error = null;
+
+      try {
+        const res = await fetch('/api/eval-custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task: this.task,
+            custom_guidelines: this.customGuidelines[modelId],
+            model: modelId,
+            num_trials: this.evalTrials,
+            threads: this.threads,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          this.error = err.detail || 'Custom eval failed';
+          this.customLoading[modelId] = false;
+          return;
+        }
+        const data = await res.json();
+        this.customResults[modelId] = data;
+      } catch (e) {
+        this.error = e.message;
+      }
+      this.customLoading[modelId] = false;
+    },
+
     async copyPrompt(model) {
       const prompt = this.results?.students?.[model]?.prompt;
       if (!prompt) return;
@@ -223,6 +278,10 @@ document.addEventListener('alpine:init', () => {
         const cost = data.cost;
         cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency, cost });
         cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency, cost });
+        if (this.customResults[model]) {
+          const cr = this.customResults[model];
+          cols.push({ label: 'Custom', model: short, scores: cr.scores, latency: cr.latency, cost: cr.cost || cost });
+        }
       }
       return cols;
     },
