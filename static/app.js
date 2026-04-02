@@ -167,6 +167,13 @@ document.addEventListener('alpine:init', () => {
       if (!this.jobId) return;
       try {
         const res = await fetch(`/api/jobs/${this.jobId}`);
+        if (res.status === 404) {
+          clearInterval(this.polling);
+          this.jobId = null;
+          this.jobStatus = null;
+          this.error = 'Job lost -- the server restarted. Please run again.';
+          return;
+        }
         const status = await res.json();
         this.jobStatus = status;
 
