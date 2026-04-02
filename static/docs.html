@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs - DSPy Prompt Optimizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: {
+      darkMode: true, background: '#1a1d27', primaryColor: '#6c5ce7',
+      primaryTextColor: '#e1e4ed', lineColor: '#636e72',
+    }});
+  </script>
+  <style>
+    .docs { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+    .docs h1 { margin-bottom: 8px; }
+    .docs h2 { margin-top: 32px; margin-bottom: 8px; font-size: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .docs h3 { margin-top: 20px; margin-bottom: 6px; font-size: 1rem; color: var(--accent); }
+    .docs p, .docs li { font-size: 0.9rem; line-height: 1.7; color: var(--text); margin-bottom: 8px; }
+    .docs ul, .docs ol { padding-left: 20px; margin-bottom: 12px; }
+    .docs code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-family: var(--mono); font-size: 0.85em; }
+    .docs pre { background: var(--surface2); padding: 16px; border-radius: var(--radius); overflow-x: auto; margin: 12px 0; }
+    .docs pre code { padding: 0; background: none; }
+    .docs .field-ref { display: inline-block; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin: 4px 0; width: 100%; }
+    .docs .field-ref strong { color: var(--accent); }
+    .docs .field-ref p { margin: 4px 0 0; color: var(--text-dim); font-size: 0.85rem; }
+    .docs .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 12px 0; }
+    .docs .step-num { display: inline-block; background: var(--accent); color: #fff; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: 700; font-size: 0.85rem; margin-right: 8px; }
+    .docs .tip { background: rgba(108,92,231,0.1); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; margin: 12px 0; font-size: 0.85rem; }
+    .docs .warning { background: rgba(253,203,110,0.1); border-left: 3px solid var(--warning); padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; margin: 12px 0; font-size: 0.85rem; }
+    .mermaid-wrap { margin: 20px 0; padding: 20px; background: var(--surface2); border-radius: var(--radius); border: 1px solid var(--border); overflow-x: auto; }
+    .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+    .diagram-caption { text-align: center; font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; font-style: italic; }
+    .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin-bottom: 16px; }
+    .back-link:hover { text-decoration: underline; }
+    .docs table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.85rem; }
+    .docs th { text-align: left; padding: 8px 12px; background: var(--surface2); color: var(--text-dim); font-weight: 500; }
+    .docs td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+<div class="docs">
+
+  <a href="/" class="back-link">&larr; Back to Optimizer</a>
+  <h1>Documentation</h1>
+  <p class="subtitle">How to use the DSPy Prompt Optimizer to get production-ready prompts.</p>
+
+  <!-- ============================================================ -->
+  <h2>What This Tool Does</h2>
+
+  <p>This tool helps you get high-quality results from cheap, fast AI models without manually writing prompts.</p>
+
+  <p>Here's the problem it solves: you have a task (like checking if marketing copy follows brand guidelines). An expensive, smart model does it well, but it's slow and costs a lot per request. A cheap model is fast and affordable, but it gets the task wrong without a carefully crafted prompt.</p>
+
+  <p>This tool <strong>automatically finds the best prompt</strong> for the cheap model by:</p>
+  <ol>
+    <li>Using a smart "teacher" model to generate high-quality examples of the task being done well</li>
+    <li>Testing different combinations of instructions and examples to find what works best</li>
+    <li>Scoring everything against your evaluation metrics</li>
+    <li>Giving you the winning prompt that you can copy-paste into any API</li>
+  </ol>
+
+  <p>You run the optimization once. After that, you deploy the cheap model with the optimized prompt &mdash; no teacher model needed in production.</p>
+
+  <div class="mermaid-wrap">
+    <pre class="mermaid">
+flowchart TD
+    subgraph opt["Optimization (runs once)"]
+        direction TB
+        A["Your Labeled<br>Examples"]:::input --> B["Teacher Model<br>(expensive, smart)"]:::teacher
+        B --> C["Generates high-quality<br>reasoning traces"]:::process
+        C --> D["MIPROv2 Optimizer"]:::optimizer
+        D --> E["Tests prompt<br>combinations"]:::process
+        E --> F{"Score against<br>your metrics"}:::decision
+        F -->|"Try again"| D
+        F -->|"Best found"| G["Optimized Prompt<br>(instructions + examples)"]:::output
+    end
+
+    subgraph prod["Production (every request)"]
+        direction TB
+        G --> H["Student Model<br>(cheap, fast)"]:::student
+        I["New Input"]:::input --> H
+        H --> J["High-Quality<br>Output"]:::output
+    end
+
+    classDef input fill:#6c5ce7,stroke:#8b7ff0,color:#fff,font-weight:bold
+    classDef teacher fill:#e17055,stroke:#fab1a0,color:#fff,font-weight:bold
+    classDef student fill:#00b894,stroke:#55efc4,color:#fff,font-weight:bold
+    classDef process fill:#2d3436,stroke:#636e72,color:#dfe6e9
+    classDef optimizer fill:#0984e3,stroke:#74b9ff,color:#fff,font-weight:bold
+    classDef decision fill:#fdcb6e,stroke:#ffeaa7,color:#2d3436,font-weight:bold
+    classDef output fill:#00b894,stroke:#55efc4,color:#fff,font-weight:bold
+
+    style opt fill:#1a1d27,stroke:#6c5ce7,stroke-width:2px,color:#e1e4ed
+    style prod fill:#1a1d27,stroke:#00b894,stroke-width:2px,color:#e1e4ed
+    </pre>
+    <div class="diagram-caption">The optimization loop runs once. The optimized prompt is then used in production with the cheap model.</div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>Field Reference</h2>
+
+  <h3>Task Configuration</h3>
+
+  <div class="field-ref">
+    <strong>Task Name</strong>
+    <p>A label for your task. Used for saving and loading configurations. Example: "Brand Voice Compliance - Liquid Death"</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Description</strong>
+    <p>A one-sentence description of what the model should do. This becomes the opening line of the system prompt that the model sees. Be specific. Example: "Check if marketing copy complies with brand voice guidelines. If non-compliant, identify problematic phrases and suggest an on-brand replacement."</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Guidelines / Context</strong>
+    <p>The rules, context, or reference material the model needs to do its job. This gets included in every prompt. For brand compliance, this would be your brand voice guide &mdash; tone rules, banned phrases, preferred alternatives, structural rules. The more specific you are, the better the model performs.</p>
+  </div>
+
+  <h3>Signature Fields</h3>
+
+  <p>These define the model's input/output contract &mdash; what goes in and what comes out.</p>
+
+  <div class="field-ref">
+    <strong>Input Fields</strong>
+    <p>What the model receives for each request. Each field has a <code>name</code> (used in the data table) and a <code>description</code> (tells the model what this field contains). Example: an input field called <code>marketing_copy</code> with description "The marketing copy to check".</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Output Fields</strong>
+    <p>What the model produces. Same structure as inputs &mdash; name + description. These are what get scored by your metrics. Example: <code>compliant</code> ("true if on-brand, false if not"), <code>flagged_phrases</code> ("comma-separated problematic phrases"), <code>suggestion</code> ("rewritten on-brand version").</p>
+  </div>
+
+  <div class="tip">
+    <strong>Tip:</strong> Keep output field names simple and snake_case. The descriptions matter &mdash; they tell the model exactly what format you expect. "Comma-separated list" vs "JSON array" vs "one per line" will produce very different outputs.
+  </div>
+
+  <h3>Evaluation Metrics</h3>
+
+  <p>Metrics define how the model's output is scored. The optimizer uses these scores to find the best prompt. Each metric targets one output field.</p>
+
+  <table>
+    <tr><th>Metric Type</th><th>What It Does</th><th>Best For</th></tr>
+    <tr>
+      <td><code>Exact Match</code></td>
+      <td>Compares the model's output to the expected value (case-insensitive). Returns 1.0 if they match, 0.0 if not.</td>
+      <td>Classification fields like "true"/"false", category labels, yes/no answers.</td>
+    </tr>
+    <tr>
+      <td><code>F1 Phrases</code></td>
+      <td>Parses comma-separated phrases from both expected and predicted, then computes precision/recall/F1 with fuzzy matching.</td>
+      <td>Fields where the model lists multiple items, like flagged phrases or extracted entities.</td>
+    </tr>
+    <tr>
+      <td><code>Rule Quality</code></td>
+      <td>Checks the output text against structural rules: no banned words, max sentence length, no passive voice. Returns a score based on how many rules pass.</td>
+      <td>Free-text outputs like rewritten copy, suggestions, or generated content that must follow specific rules.</td>
+    </tr>
+    <tr>
+      <td><code>Custom</code></td>
+      <td>Write your own Python scoring function. Must define <code>def metric(example, pred, trace=None) -> float</code> returning 0.0-1.0.</td>
+      <td>Anything the built-in types don't cover.</td>
+    </tr>
+  </table>
+
+  <div class="field-ref">
+    <strong>Weight</strong>
+    <p>How much this metric contributes to the overall score. Weights are normalized automatically (they don't need to sum to 1.0). A metric with weight 0.4 matters more than one with weight 0.3.</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Target Field</strong>
+    <p>Which output field this metric scores. Make sure each output field has at least one metric, or the optimizer won't know if that field is correct.</p>
+  </div>
+
+  <h3>Rule Quality Options</h3>
+
+  <p>When you select "Rule Quality" as the metric type, additional options appear:</p>
+
+  <div class="field-ref">
+    <strong>Banned Words</strong>
+    <p>One phrase per line. If any of these appear in the model's output, that check fails. Example: corporate jargon like "premium quality", "best-in-class", "leverage".</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>No Passive Voice</strong>
+    <p>When checked, the metric flags passive voice patterns ("was created", "is being used"). Useful for brand voices that require active, direct language.</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Max Sentence Length</strong>
+    <p>Maximum average words per sentence. Set to 0 to disable. Useful for brands that require short, punchy copy.</p>
+  </div>
+
+  <h3>Training Data</h3>
+
+  <div class="field-ref">
+    <strong>Examples Table</strong>
+    <p>Labeled examples that the optimizer learns from. Each row has values for every field (inputs AND outputs). The optimizer uses these to figure out what "good" looks like.</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Data Split (train / val / test)</strong>
+    <p>Your examples are automatically split three ways:</p>
+    <ul style="margin-top:4px;">
+      <li><strong>Train</strong> &mdash; The optimizer picks the best few-shot examples from these</li>
+      <li><strong>Validation</strong> &mdash; The optimizer scores candidate prompts against these during search</li>
+      <li><strong>Test</strong> &mdash; Never seen during optimization. Used only for the final honest evaluation</li>
+    </ul>
+  </div>
+
+  <div class="tip">
+    <strong>How many examples?</strong> Aim for 30-50 minimum. More is better. Include a mix of cases &mdash; for brand compliance, that means both compliant and non-compliant copy covering different types of violations.
+  </div>
+
+  <h3>Model Configuration</h3>
+
+  <div class="field-ref">
+    <strong>Teacher Model</strong>
+    <p>The smart, expensive model used during optimization. It generates high-quality demonstrations that teach the student model how to do the task. Only runs during optimization &mdash; never in production. Example: <code>gemini/gemini-3.1-pro-preview</code></p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Student Models</strong>
+    <p>The cheap, fast models you want to deploy in production. The optimizer finds the best prompt for each one. You can test multiple to compare. Example: <code>gemini/gemini-2.5-flash-lite</code></p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Eval Trials</strong>
+    <p>How many times to run the evaluation for each configuration. More trials = more stable numbers (mean and standard deviation). Default is 10. Use 30+ for results you want to present confidently.</p>
+  </div>
+
+  <div class="field-ref">
+    <strong>Threads</strong>
+    <p>Parallel API calls during evaluation. Higher = faster but may hit rate limits. Default 50 works well for Gemini.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>Walkthrough: Default Task</h2>
+
+  <p>Let's walk through the tool using the built-in Liquid Death brand voice example.</p>
+
+  <div class="step">
+    <span class="step-num">1</span>
+    <strong>Load the default task</strong>
+    <p>Click "Default Task" and make sure "Use default synthetic data" is checked. This pre-fills everything: guidelines, fields, metrics, and 53 labeled examples.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span>
+    <strong>Review what's configured</strong>
+    <p>Scroll through the page to see what's set up:</p>
+    <ul>
+      <li><strong>Guidelines</strong>: Liquid Death's brand voice rules &mdash; irreverent, anti-corporate, punk. Includes banned phrases ("premium quality", "leverage", etc.) and preferred alternatives ("purchase" &rarr; "grab").</li>
+      <li><strong>Input</strong>: <code>marketing_copy</code> &mdash; the text to check.</li>
+      <li><strong>Outputs</strong>: <code>compliant</code> (true/false), <code>flagged_phrases</code> (what's wrong), <code>suggestion</code> (the fix).</li>
+      <li><strong>Metrics</strong>: Exact match on compliance (40%), F1 on flagged phrases (30%), rule quality on suggestions (30%).</li>
+      <li><strong>Examples</strong>: 53 rows mixing on-brand copy and corporate jargon violations.</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span>
+    <strong>Check model configuration</strong>
+    <p>The defaults work well:</p>
+    <ul>
+      <li><strong>Teacher</strong>: <code>gemini/gemini-3.1-pro-preview</code> ($2.00/M tokens) &mdash; the smart model</li>
+      <li><strong>Student</strong>: <code>gemini/gemini-2.5-flash-lite</code> ($0.10/M tokens) &mdash; the cheap model</li>
+    </ul>
+    <p>You can add more student models to compare (click "+ Add Student Model").</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4</span>
+    <strong>Click "Run Optimization"</strong>
+    <p>This kicks off the full pipeline:</p>
+    <ol>
+      <li>Evaluates the teacher model with all examples (the "monolith" baseline)</li>
+      <li>Evaluates the student model with no optimization (the "naive" baseline)</li>
+      <li>Runs the optimizer to find the best prompt for the student</li>
+      <li>Evaluates the student with the optimized prompt</li>
+    </ol>
+    <p>This takes a few minutes. The progress bar updates as each step completes.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">5</span>
+    <strong>Read the results</strong>
+    <p>The results table shows three columns per student model:</p>
+    <ul>
+      <li><strong>Monolith</strong>: the expensive model doing the task. This is the ceiling &mdash; the best possible quality at highest cost.</li>
+      <li><strong>Naive</strong>: the cheap model with no optimization. This is the floor.</li>
+      <li><strong>DSPy</strong>: the cheap model with the optimized prompt. This should be close to the monolith at a fraction of the cost.</li>
+    </ul>
+    <p>Green highlighted values = best in that row. You want DSPy to match or beat the monolith.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">6</span>
+    <strong>Download the production prompt</strong>
+    <p>Click the download button to get a <code>.txt</code> file containing the optimized prompt. This file has:</p>
+    <ul>
+      <li><strong>System instructions</strong> &mdash; use as your system prompt in any API</li>
+      <li><strong>Few-shot examples</strong> &mdash; include these in the conversation</li>
+      <li><strong>User message template</strong> &mdash; where you insert each new request</li>
+    </ul>
+    <p>This works with any LLM API (Gemini, OpenAI, Anthropic, etc.). No DSPy dependency needed in production.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>Walkthrough: Creating a Fresh Task</h2>
+
+  <p>When you want to optimize a prompt for your own task:</p>
+
+  <div class="step">
+    <span class="step-num">1</span>
+    <strong>Click "Fresh Task"</strong>
+    <p>This clears everything and gives you a blank form with starter fields.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span>
+    <strong>Define your task</strong>
+    <p>Fill in the name, description, and guidelines. Think of the description as "what would you tell a new hire to do?" and the guidelines as "the reference material they'd need."</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span>
+    <strong>Set up signature fields</strong>
+    <p>Add input fields (what goes in) and output fields (what comes out). Remove the starter fields if they don't match your task. Every output field needs a description that tells the model exactly what format to use.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4</span>
+    <strong>Configure metrics</strong>
+    <p>Add one metric per output field. Pick the type that matches the field:</p>
+    <ul>
+      <li>Classification/label &rarr; <strong>Exact Match</strong></li>
+      <li>List of items &rarr; <strong>F1 Phrases</strong></li>
+      <li>Free text with rules &rarr; <strong>Rule Quality</strong></li>
+    </ul>
+    <p>Set weights based on what matters most for your use case.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">5</span>
+    <strong>Add training data</strong>
+    <p>Click "+ Add Row" or "Import CSV" to add labeled examples. Each row needs values for ALL fields (inputs and outputs). For rows where an output doesn't apply (e.g., no suggestion needed for compliant copy), use an empty string.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">6</span>
+    <strong>Run and iterate</strong>
+    <p>Click "Run Optimization" and review results. If the scores are low, you likely need more examples, clearer guidelines, or better metric configuration.</p>
+  </div>
+
+  <div class="warning">
+    <strong>Common pitfalls:</strong>
+    <ul style="margin:4px 0 0;">
+      <li>Too few examples (&lt;20) &mdash; the optimizer doesn't have enough signal</li>
+      <li>Vague output descriptions &mdash; the model guesses the format instead of following it</li>
+      <li>Missing metrics on output fields &mdash; the optimizer ignores un-scored fields</li>
+      <li>Inconsistent labeling in examples &mdash; "True" vs "true" vs "yes" confuses exact match</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>Understanding the Results</h2>
+
+  <p>After optimization completes, the tool evaluates three configurations on a held-out test set that was never seen during optimization:</p>
+
+  <div class="mermaid-wrap">
+    <pre class="mermaid">
+flowchart LR
+    subgraph configs["Three Configurations Tested"]
+        direction TB
+        M["Monolith<br>Expensive model +<br>all examples"]:::teacher
+        N["Naive<br>Cheap model +<br>zero-shot"]:::naive
+        O["DSPy Optimized<br>Cheap model +<br>optimized prompt"]:::optimized
+    end
+
+    subgraph eval["Evaluation (per config)"]
+        direction TB
+        T["Held-out<br>Test Set"]:::input --> R["Run N trials<br>(parallel, temp=0)"]:::process
+        R --> S1["Exact Match<br>on labels"]:::metric
+        R --> S2["F1 Score<br>on phrases"]:::metric
+        R --> S3["Rule Checks<br>on suggestions"]:::metric
+        S1 --> C["Composite Score<br>(weighted average)"]:::output
+        S2 --> C
+        S3 --> C
+        C --> ST["Mean +/- StdDev<br>+ Latency"]:::output
+    end
+
+    configs --> eval
+
+    ST --> CMP["Side-by-Side<br>Comparison Table"]:::final
+
+    classDef input fill:#6c5ce7,stroke:#8b7ff0,color:#fff,font-weight:bold
+    classDef teacher fill:#e17055,stroke:#fab1a0,color:#fff,font-weight:bold
+    classDef naive fill:#636e72,stroke:#b2bec3,color:#fff,font-weight:bold
+    classDef optimized fill:#00b894,stroke:#55efc4,color:#fff,font-weight:bold
+    classDef process fill:#2d3436,stroke:#636e72,color:#dfe6e9
+    classDef metric fill:#0984e3,stroke:#74b9ff,color:#fff,font-weight:bold
+    classDef output fill:#fdcb6e,stroke:#ffeaa7,color:#2d3436,font-weight:bold
+    classDef final fill:#00b894,stroke:#55efc4,color:#fff,font-weight:bold
+    </pre>
+    <div class="diagram-caption">Each configuration is evaluated N times on data never seen during optimization. Results are reported as mean +/- standard deviation.</div>
+  </div>
+
+  <h3>Metrics in the results table</h3>
+
+  <table>
+    <tr><th>Column</th><th>What It Means</th></tr>
+    <tr>
+      <td><code>composite</code></td>
+      <td>The overall score &mdash; a weighted average of all your metrics. This is the single number to compare across configurations.</td>
+    </tr>
+    <tr>
+      <td>Individual metrics</td>
+      <td>Each metric you defined shows up as its own row. Useful for seeing WHERE the model is struggling (e.g., good at classification but bad at phrase detection).</td>
+    </tr>
+    <tr>
+      <td><code>latency</code></td>
+      <td>Average response time in milliseconds. The optimized model may be slightly slower than naive (because the prompt is longer with few-shot examples) but dramatically faster than the monolith.</td>
+    </tr>
+  </table>
+
+  <h3>What "+/-" means</h3>
+  <p>Scores show <code>mean +/- standard deviation</code> across your eval trials. A small "+/-" means the score is stable and reliable. A large "+/-" means the model's output varies between runs &mdash; consider using more eval trials or adding <code>temperature=0</code> to your model config.</p>
+
+  <h3>What "best" (green) means</h3>
+  <p>The highest score in each row is highlighted green. For latency, the lowest (fastest) value is highlighted. Ideally, the DSPy column should be green for most metrics while also being green for latency.</p>
+
+</div>
+</body>
+</html>

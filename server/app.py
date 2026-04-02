@@ -19,3 +19,8 @@ app.include_router(router)
 @app.get("/")
 def root():
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+@app.get("/docs-page")
+def docs_page():
+    return FileResponse(str(STATIC_DIR / "docs.html"))
