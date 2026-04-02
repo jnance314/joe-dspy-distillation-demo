@@ -348,14 +348,23 @@
         </div>
       </template>
 
-      <!-- Download prompts -->
-      <div class="download-area">
-        <template x-for="(model, key) in results.students">
-          <button class="btn btn-sm" @click="downloadPrompt(key)">
-            Download prompt: <span x-text="key.split('/').pop()"></span>
-          </button>
-        </template>
-      </div>
+      <!-- Prompt viewers per student model -->
+      <template x-for="(data, modelId) in results.students" :key="modelId">
+        <div style="margin-top:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h3 style="margin:0; font-size:0.9rem;">
+              Production Prompt: <span style="color:var(--accent);" x-text="modelId.split('/').pop()"></span>
+            </h3>
+            <div class="btn-group">
+              <button class="btn btn-sm" @click="copyPrompt(modelId)">Copy to Clipboard</button>
+              <button class="btn btn-sm" @click="downloadPrompt(modelId)">Download .txt</button>
+            </div>
+          </div>
+          <textarea readonly
+            style="width:100%; min-height:200px; max-height:500px; font-family:var(--mono); font-size:0.75rem; line-height:1.5; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:12px; color:var(--text); resize:vertical;"
+            x-text="data.prompt || 'No prompt generated'"></textarea>
+        </div>
+      </template>
     </div>
   </template>
 

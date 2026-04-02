@@ -1,58 +1,77 @@
-# DSPy Brand Voice Compliance Checker
+# DSPy Prompt Optimizer
 
-Demonstrates [DSPy](https://dspy.ai/)'s automatic prompt optimization using MIPROv2.
+Automatic prompt optimization with DSPy's MIPROv2. Comes with a web UI and a CLI demo.
 
-## The problem
-
-Writing prompts for brand voice compliance is painful. The rules are nuanced, the output is inconsistent, and if you want good results you're stuck paying for an expensive model. Switching models means re-doing all the prompt work.
-
-## What this demo shows
-
-1. A cheap model (Gemini 2.5 Flash Lite, $0.10/M tokens) tries to check brand compliance **zero-shot** — baseline accuracy
-2. DSPy's MIPROv2 optimizer uses a smart teacher model (Gemini 2.5 Pro, $1.25/M tokens) to **automatically find the best prompt** — instructions + few-shot examples
-3. The same cheap model, now with the optimized prompt, performs **significantly better**
-4. The optimization runs once. After that, you deploy the cheap model with no teacher in the loop.
-
-## Use case
-
-**Liquid Death brand voice compliance** — given marketing copy and brand guidelines, the system:
-- Labels copy as compliant or non-compliant
-- Flags specific problematic phrases
-- Suggests on-brand replacements
-
-## Evaluation metrics (fully deterministic, no LLM-as-judge)
-
-| Metric | What it measures |
-|--------|-----------------|
-| Compliance accuracy | Did it get the on-brand/off-brand label right? |
-| Phrase detection F1 | Did it find the correct problematic phrases? |
-| Suggestion quality | Does the replacement follow brand rules? (no banned phrases, no passive voice, short sentences) |
-| **Composite** | Weighted combination: 40% compliance + 30% phrase F1 + 30% suggestion quality |
+Optimize once with a smart model, deploy on a cheap model. No manual prompt engineering.
 
 ## Quick start
 
 ```bash
 uv sync
 cp .env.example .env
-# Add your GOOGLE_API_KEY to .env
+# Add your API keys to .env (Gemini, OpenAI, and/or Anthropic)
+```
+
+### Web UI
+
+```bash
+uv run run_web.py
+# Open http://localhost:8000
+```
+
+### CLI demo
+
+```bash
 uv run demo.py
 ```
+
+## Deploy to Google Cloud Run
+
+```bash
+# Build and push
+gcloud builds submit --tag gcr.io/YOUR_PROJECT/dspy-optimizer
+
+# Deploy with API keys as secrets
+gcloud run deploy dspy-optimizer \
+  --image gcr.io/YOUR_PROJECT/dspy-optimizer \
+  --set-env-vars GEMINI_API_KEY=xxx,OPENAI_API_KEY=xxx,ANTHROPIC_API_KEY=xxx \
+  --memory 2Gi \
+  --timeout 900 \
+  --allow-unauthenticated
+```
+
+Or use the `--set-secrets` flag to pull from Secret Manager instead of inline env vars.
+
+## What it does
+
+1. A cheap model tries your task zero-shot (naive baseline)
+2. An expensive "teacher" model generates high-quality demonstrations
+3. MIPROv2 finds the optimal prompt (instructions + few-shot examples) for the cheap model
+4. The cheap model with the optimized prompt matches or beats the expensive model
+
+## Default demo: Brand voice compliance (Liquid Death)
+
+Given marketing copy and brand guidelines, the system:
+- Labels copy as compliant or non-compliant
+- Flags specific problematic phrases
+- Suggests on-brand replacements
 
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `demo.py` | Main script — run this |
-| `metrics.py` | Deterministic scoring functions |
-| `brand/guidelines.py` | Brand voice rules, banned phrases, tone descriptors |
-| `brand/trainset.py` | ~30 labeled training examples (edit to iterate) |
-| `brand/valset.py` | ~15 held-out validation examples |
+| `run_web.py` | Web UI entry point (FastAPI + Alpine.js) |
+| `demo.py` | CLI demo (standalone, no web server) |
+| `core/` | Task-agnostic DSPy engine |
+| `server/` | FastAPI backend |
+| `static/` | Frontend (no build step) |
+| `brand/` | Default task data (Liquid Death) |
+| `tasks/` | Saved task configs (JSON) |
+| `Dockerfile` | Cloud Run / container deployment |
+| `GUIDE.md` | User guide with walkthroughs |
 
-## Customizing
+## Supported model providers
 
-To adapt this for a different brand:
-1. Edit `brand/guidelines.py` — swap in your brand's rules, banned phrases, and tone
-2. Edit `brand/trainset.py` and `brand/valset.py` — write new labeled examples
-3. Run `python demo.py`
-
-The DSPy pipeline, metrics, and demo script don't need to change.
+Gemini, OpenAI, and Anthropic models are pre-configured in the dropdown.
+Add your API keys to `.env` for the providers you want to use.
+DSPy uses LiteLLM under the hood, so any LiteLLM-compatible model works.

@@ -196,11 +196,31 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    async copyPrompt(model) {
+      const prompt = this.results?.students?.[model]?.prompt;
+      if (!prompt) return;
+      try {
+        await navigator.clipboard.writeText(prompt);
+        // Brief visual feedback
+        const btn = event.target;
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      } catch (e) {
+        // Fallback for non-HTTPS contexts
+        const ta = document.createElement('textarea');
+        ta.value = prompt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+    },
+
     async downloadPrompt(model) {
-      if (!this.jobId) return;
-      const res = await fetch(`/api/jobs/${this.jobId}/prompt/${encodeURIComponent(model)}`);
-      const text = await res.text();
-      const blob = new Blob([text], { type: 'text/plain' });
+      const prompt = this.results?.students?.[model]?.prompt;
+      if (!prompt) return;
+      const blob = new Blob([prompt], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

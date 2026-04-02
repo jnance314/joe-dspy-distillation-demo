@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.git/
+optimized_*.json
+production_prompt.txt
+.claude/

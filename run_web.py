@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
-"""Entry point for the web UI. Run with: uv run run_web.py"""
+"""
+Entry point for the DSPy Prompt Optimizer.
+
+Local:     uv run run_web.py
+Cloud Run: automatically uses PORT env var
+"""
 
 import logging
-import uvicorn
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env BEFORE anything else so API keys are available
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,4 +20,8 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
-    uvicorn.run("server.app:app", host="127.0.0.1", port=8000, reload=True)
+    import uvicorn
+    port = int(os.getenv("PORT", "8000"))
+    # reload=True only when running locally (not in production)
+    is_local = os.getenv("K_SERVICE") is None  # K_SERVICE is set by Cloud Run
+    uvicorn.run("server.app:app", host="0.0.0.0", port=port, reload=is_local)
