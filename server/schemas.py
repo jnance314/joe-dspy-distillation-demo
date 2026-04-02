@@ -25,6 +25,7 @@ class TaskConfigSchema(BaseModel):
     name: str
     description: str
     guidelines: str
+    module_key: str = "brand_voice"
     fields: list[FieldDefSchema]
     metrics: list[MetricDefSchema]
     examples: list[dict]

@@ -38,6 +38,7 @@ class TaskConfig:
     name: str
     description: str  # becomes the Signature docstring
     guidelines: str  # injected as an input field at runtime
+    module_key: str  # key into TASK_MODULES registry
     fields: list[FieldDef]
     metrics: list[MetricDef]
     examples: list[dict]  # plain dicts keyed by field name
@@ -58,7 +59,8 @@ class TaskConfig:
         return [f.name for f in self.input_fields]
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        return d
 
     def save(self, path: str | Path) -> None:
         with open(path, "w", encoding="utf-8") as f:
@@ -70,6 +72,7 @@ class TaskConfig:
             name=data["name"],
             description=data["description"],
             guidelines=data["guidelines"],
+            module_key=data.get("module_key", "brand_voice"),
             fields=[FieldDef(**f) for f in data["fields"]],
             metrics=[MetricDef(**m) for m in data["metrics"]],
             examples=data["examples"],

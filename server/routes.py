@@ -30,15 +30,6 @@ def get_task(name: str) -> dict:
         return json.load(f)
 
 
-@router.post("/tasks")
-def save_task(task: TaskConfigSchema) -> dict:
-    TASKS_DIR.mkdir(exist_ok=True)
-    safe_name = task.name.lower().replace(" ", "_").replace("-", "_")
-    path = TASKS_DIR / f"{safe_name}.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(task.model_dump(), f, indent=2, ensure_ascii=False)
-    return {"saved": safe_name}
-
 
 @router.post("/run")
 def start_run(request: RunRequest) -> dict:

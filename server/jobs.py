@@ -65,6 +65,7 @@ class JobManager:
                 name=request.task.name,
                 description=request.task.description,
                 guidelines=request.task.guidelines,
+                module_key=request.task.module_key,
                 fields=[FieldDef(**f.model_dump()) for f in request.task.fields],
                 metrics=[MetricDef(**m.model_dump()) for m in request.task.metrics],
                 examples=request.task.examples,

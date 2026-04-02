@@ -18,18 +18,14 @@
   </div>
   <p class="subtitle">Optimize prompts automatically. Deploy cheap models that perform like expensive ones.</p>
 
-  <!-- Mode Toggle -->
+  <!-- Task Selector -->
   <div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-      <div class="mode-toggle">
-        <button class="btn" :class="{ active: mode === 'default' }" @click="loadDefaultTask()">Default Task</button>
-        <button class="btn" :class="{ active: mode === 'fresh' }" @click="freshTask()">Fresh Task</button>
-      </div>
-      <template x-if="mode === 'default'">
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; letter-spacing:0;">
-          <input type="checkbox" x-model="useDefaultData" style="width:auto;">
-          <span style="font-size:0.85rem;">Use default synthetic data</span>
-        </label>
+    <h2 style="margin-bottom:8px;">Select Task</h2>
+    <div class="mode-toggle" style="flex-wrap:wrap;">
+      <template x-for="t in savedTasks" :key="t">
+        <button class="btn" :class="{ active: selectedTask === t }"
+          @click="loadTask(t)" x-text="t.replace(/_/g, ' ')">
+        </button>
       </template>
     </div>
   </div>
@@ -38,12 +34,6 @@
   <div class="card">
     <h2>Task Configuration</h2>
 
-    <template x-if="mode === 'fresh'">
-      <div class="help">
-        Define your task: what goes in, what comes out, and the rules the model should follow.
-        The description becomes the model's system prompt preamble.
-      </div>
-    </template>
 
     <div class="form-row">
       <div class="form-group">
@@ -63,12 +53,6 @@
 
     <!-- Signature Fields -->
     <h2 style="margin-top:16px;">Signature Fields</h2>
-    <template x-if="mode === 'fresh'">
-      <div class="help">
-        Input fields: what the model receives (e.g., the text to analyze).
-        Output fields: what the model produces (e.g., classification, flagged phrases, rewritten text).
-      </div>
-    </template>
 
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
       <!-- Input fields -->
@@ -105,12 +89,6 @@
   <!-- Metrics -->
   <div class="card">
     <h2>Evaluation Metrics</h2>
-    <template x-if="mode === 'fresh'">
-      <div class="help">
-        Define how to score the model's output. Each metric targets one output field.
-        Weights are normalized automatically. The composite score is what DSPy optimizes against.
-      </div>
-    </template>
 
     <template x-for="(m, idx) in task.metrics" :key="m.name + idx">
       <div style="margin-bottom:12px; padding:12px; background:var(--surface2); border-radius:var(--radius);">
@@ -181,12 +159,6 @@
       </div>
     </div>
 
-    <template x-if="mode === 'fresh'">
-      <div class="help">
-        Labeled examples the optimizer learns from. Aim for 30-50 examples covering different cases.
-        The data is automatically split into train/validation/test sets.
-      </div>
-    </template>
 
     <div class="examples-wrap">
       <table class="examples-table">
@@ -205,13 +177,12 @@
               <td style="color:var(--text-dim);" x-text="idx + 1"></td>
               <template x-for="f in task.fields">
                 <td>
-                  <textarea x-model="ex[f.name]" :readonly="mode === 'default' && useDefaultData"
-                    rows="1" style="min-height:32px;"></textarea>
+                  <textarea x-model="ex[f.name]"                    rows="1" style="min-height:32px;"></textarea>
                 </td>
               </template>
               <td>
                 <button class="btn btn-sm btn-danger" @click="removeExample(idx)"
-                  :disabled="mode === 'default' && useDefaultData">&times;</button>
+>&times;</button>
               </td>
             </tr>
           </template>

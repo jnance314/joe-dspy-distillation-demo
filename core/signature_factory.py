@@ -28,23 +28,3 @@ def build_signature(task_config: TaskConfig) -> type:
         namespace["__annotations__"][f.name] = str
 
     return type("DynamicSignature", (dspy.Signature,), namespace)
-
-
-def build_module(task_config: TaskConfig) -> dspy.Module:
-    """Create a dspy.Module that wraps ChainOfThought with the dynamic signature.
-
-    The module bakes in the guidelines so the optimizer only needs to pass
-    the input fields from the examples.
-    """
-    sig_class = build_signature(task_config)
-    guidelines = task_config.guidelines
-
-    class DynamicModule(dspy.Module):
-        def __init__(self):
-            super().__init__()
-            self.check = dspy.ChainOfThought(sig_class)
-
-        def forward(self, **kwargs):
-            return self.check(guidelines=guidelines, **kwargs)
-
-    return DynamicModule()

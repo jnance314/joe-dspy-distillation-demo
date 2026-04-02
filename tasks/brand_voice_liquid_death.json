@@ -414,5 +414,6 @@
   ],
   "train_ratio": 0.5283018867924528,
   "val_ratio": 0.2830188679245283,
-  "test_ratio": 0.18867924528301888
+  "test_ratio": 0.18867924528301888,
+  "module_key": "brand_voice"
 }

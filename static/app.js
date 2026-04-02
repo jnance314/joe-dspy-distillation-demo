@@ -1,12 +1,11 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('app', () => ({
-    mode: 'default',
-    useDefaultData: true,
     availableModels: { teacher: [], student: [] },
     savedTasks: [],
+    selectedTask: null,
 
     task: {
-      name: '', description: '', guidelines: '',
+      name: '', description: '', guidelines: '', module_key: '',
       fields: [], metrics: [], examples: [],
       train_ratio: 0.6, val_ratio: 0.2, test_ratio: 0.2,
     },
@@ -29,36 +28,18 @@ document.addEventListener('alpine:init', () => {
       ]);
       this.availableModels = modelsRes;
       this.savedTasks = tasksRes;
-      await this.loadDefaultTask();
-    },
-
-    async loadDefaultTask() {
-      this.mode = 'default';
-      this.useDefaultData = true;
-      const defaultName = this.savedTasks.find(t => t.includes('liquid_death'));
-      if (defaultName) {
-        const data = await fetch(`/api/tasks/${defaultName}`).then(r => r.json());
-        this.task = data;
+      if (tasksRes.length > 0) {
+        await this.loadTask(tasksRes[0]);
       }
     },
 
-    freshTask() {
-      this.mode = 'fresh';
-      this.useDefaultData = false;
-      this.task = {
-        name: '', description: '', guidelines: '',
-        fields: [
-          { name: 'input_text', description: 'The text to analyze', field_type: 'input', value_type: 'str' },
-          { name: 'output_label', description: 'The classification result', field_type: 'output', value_type: 'str' },
-        ],
-        metrics: [
-          { name: 'accuracy', metric_type: 'exact_match', weight: 1.0, target_field: 'output_label', rule_config: {}, custom_code: '' },
-        ],
-        examples: [],
-        train_ratio: 0.6, val_ratio: 0.2, test_ratio: 0.2,
-      };
+    async loadTask(taskName) {
+      this.selectedTask = taskName;
       this.results = null;
       this.jobStatus = null;
+      this.error = null;
+      const data = await fetch(`/api/tasks/${taskName}`).then(r => r.json());
+      this.task = data;
     },
 
     addField(type) {

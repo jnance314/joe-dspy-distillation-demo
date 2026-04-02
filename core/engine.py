@@ -17,7 +17,7 @@ import dspy
 log = logging.getLogger("dspy-demo.engine")
 
 from core.task_config import TaskConfig
-from core.signature_factory import build_module, build_signature
+from core.modules import get_module
 from core.metrics_builtin import build_composite_metric
 from core.models import get_model_cost
 
@@ -123,12 +123,15 @@ def evaluate(dataset, program, composite_fn, num_trials=10, threads=THREADS):
 
 def build_monolith(task_config: TaskConfig, trainset: list) -> dspy.Module:
     """Build a module with all training examples stuffed as few-shot demos."""
-    module = build_module(task_config)
-    predictor = module.check.predict if hasattr(module.check, "predict") else module.check
-    predictor.demos = [
-        {k: v for k, v in ex.toDict().items() if k != "dspy_uuid" and k != "dspy_split"}
+    module = get_module(task_config)
+    demos = [
+        {k: v for k, v in ex.toDict().items() if k not in ("dspy_uuid", "dspy_split")}
         for ex in trainset
     ]
+    # Set demos on ALL predictors in the module (supports multi-predictor)
+    for _name, predictor in module.named_predictors():
+        pred = predictor.predict if hasattr(predictor, "predict") else predictor
+        pred.demos = demos
     return module
 
 
@@ -150,7 +153,7 @@ def optimize(task_config: TaskConfig, composite_fn, student_lm, teacher_lm,
         max_labeled_demos=4,
         verbose=False,
     )
-    module = build_module(task_config)
+    module = get_module(task_config)
     result = optimizer.compile(module, trainset=trainset, valset=valset, minibatch_size=10)
     elapsed = time.perf_counter() - t0
     log.info("MIPROv2 optimization complete in %.1fs", elapsed)
@@ -160,32 +163,43 @@ def optimize(task_config: TaskConfig, composite_fn, student_lm, teacher_lm,
 # -- Prompt export -----------------------------------------------------------
 
 def export_prompt(optimized_module) -> str:
-    """Extract the portable production prompt from an optimized module."""
-    # Navigate to the predictor
-    predictor = (optimized_module.check.predict
-                 if hasattr(optimized_module.check, "predict")
-                 else optimized_module.check)
+    """Extract the portable production prompt from an optimized module.
 
+    Supports both single-predictor and multi-predictor (multi-hop) modules.
+    Each predictor's instructions and few-shot demos are exported as a separate stage.
+    """
     lines = ["=" * 64,
              "PRODUCTION PROMPT - extracted from DSPy optimization",
              "Use this with any LLM API. No DSPy dependency needed.",
              "=" * 64, ""]
 
-    sig = predictor.signature if hasattr(predictor, "signature") else None
-    if sig and hasattr(sig, "instructions") and sig.instructions:
-        lines.append("== SYSTEM INSTRUCTIONS ==\n")
-        lines.append(sig.instructions)
-        lines.append("")
+    predictors = list(optimized_module.named_predictors())
 
-    demos = predictor.demos if hasattr(predictor, "demos") else []
-    if demos:
-        lines.append("== FEW-SHOT EXAMPLES ==\n")
-        for i, demo in enumerate(demos):
-            lines.append(f"--- Example {i + 1} ---")
-            for k, v in demo.items():
-                if k not in ("augmented", "dspy_uuid", "dspy_split"):
-                    lines.append(f"{k}: {v}")
+    for pred_name, predictor_obj in predictors:
+        pred = (predictor_obj.predict
+                if hasattr(predictor_obj, "predict")
+                else predictor_obj)
+
+        stage_label = pred_name.replace(".", " > ")
+        lines.append(f"== STAGE: {stage_label} ==\n")
+
+        sig = pred.signature if hasattr(pred, "signature") else None
+        if sig and hasattr(sig, "instructions") and sig.instructions:
+            lines.append("-- INSTRUCTIONS --\n")
+            lines.append(sig.instructions)
             lines.append("")
+
+        demos = pred.demos if hasattr(pred, "demos") else []
+        if demos:
+            lines.append(f"-- FEW-SHOT EXAMPLES ({len(demos)}) --\n")
+            for i, demo in enumerate(demos):
+                lines.append(f"--- Example {i + 1} ---")
+                for k, v in demo.items():
+                    if k not in ("augmented", "dspy_uuid", "dspy_split"):
+                        lines.append(f"{k}: {v}")
+                lines.append("")
+
+        lines.append("")
 
     lines.append("== USER MESSAGE TEMPLATE ==\n")
     lines.append("(Fill in your input fields here)")
@@ -267,7 +281,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         # Naive eval
         progress(f"Evaluating {short} naive...", base_pct)
         dspy.configure(lm=student_lm)
-        naive_module = build_module(task_config)
+        naive_module = get_module(task_config)
         naive_scores, naive_latency = evaluate(testset, naive_module, composite_fn, num_trials, threads)
 
         # Optimize
