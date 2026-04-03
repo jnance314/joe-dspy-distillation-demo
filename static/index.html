@@ -54,41 +54,45 @@
     <!-- Signature Fields -->
     <h2 style="margin-top:16px;">Signature Fields</h2>
     <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
-      These define what the model receives (inputs) and what it produces (outputs).
-      The field names must match the column headers in the training data below.
+      What the model receives (inputs) and produces (outputs). Field names match the training data columns.
     </p>
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-      <!-- Input fields -->
-      <div>
-        <label>Input Fields <span style="font-weight:400; text-transform:none;">(what the model receives)</span></label>
-        <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'input')" :key="idx">
-          <div style="margin-bottom:8px; padding:10px; background:var(--surface2); border-radius:var(--radius);">
-            <div class="field-row" style="margin-bottom:4px;">
-              <input type="text" x-model="f.name" placeholder="field name">
-              <input type="text" x-model="f.description" placeholder="description">
-              <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
-            </div>
-            <p style="font-size:0.75rem; color:var(--text-dim); margin:0;" x-text="getFieldDescription(f)"></p>
-          </div>
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:6px 8px; color:var(--text-dim); font-size:0.7rem; font-weight:500; text-transform:uppercase;">Type</th>
+          <th style="text-align:left; padding:6px 8px; color:var(--text-dim); font-size:0.7rem; font-weight:500; text-transform:uppercase;">Name</th>
+          <th style="text-align:left; padding:6px 8px; color:var(--text-dim); font-size:0.7rem; font-weight:500; text-transform:uppercase;">Description</th>
+          <th style="width:36px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="(f, idx) in task.fields" :key="f.name + idx">
+          <tr style="border-bottom:1px solid var(--border);"
+            :style="f.field_type === 'input' ? 'border-left:3px solid var(--accent);' : 'border-left:3px solid var(--success);'">
+            <td style="padding:6px 8px; width:60px;">
+              <span style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px;"
+                :style="f.field_type === 'input' ? 'color:var(--accent);' : 'color:var(--success);'"
+                x-text="f.field_type"></span>
+            </td>
+            <td style="padding:6px 8px; width:180px;">
+              <input type="text" x-model="f.name" placeholder="field name"
+                style="font-weight:600; font-family:var(--mono); font-size:0.85rem; width:100%;">
+            </td>
+            <td style="padding:6px 8px;">
+              <input type="text" x-model="f.description" placeholder="description"
+                style="font-size:0.85rem; width:100%;">
+            </td>
+            <td style="padding:6px 4px;">
+              <button class="btn btn-sm btn-danger" @click="removeField(idx)">&times;</button>
+            </td>
+          </tr>
         </template>
-        <button class="btn btn-sm" @click="addField('input')">+ Add Input</button>
-      </div>
-      <!-- Output fields -->
-      <div>
-        <label>Output Fields <span style="font-weight:400; text-transform:none;">(what the model produces)</span></label>
-        <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'output')" :key="idx">
-          <div style="margin-bottom:8px; padding:10px; background:var(--surface2); border-radius:var(--radius);">
-            <div class="field-row" style="margin-bottom:4px;">
-              <input type="text" x-model="f.name" placeholder="field name">
-              <input type="text" x-model="f.description" placeholder="description">
-              <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
-            </div>
-            <p style="font-size:0.75rem; color:var(--text-dim); margin:0;" x-text="getFieldDescription(f)"></p>
-          </div>
-        </template>
-        <button class="btn btn-sm" @click="addField('output')">+ Add Output</button>
-      </div>
+      </tbody>
+    </table>
+    <div class="btn-group" style="margin-top:8px;">
+      <button class="btn btn-sm" @click="addField('input')">+ Add Input</button>
+      <button class="btn btn-sm" @click="addField('output')">+ Add Output</button>
     </div>
   </div>
 
@@ -132,12 +136,12 @@
     </p>
 
     <!-- Column guide -->
-    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+    <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
       <template x-for="f in task.fields" :key="f.name">
-        <span style="font-size:0.7rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border);"
-          :style="f.field_type === 'input' ? 'background:rgba(108,92,231,0.15); color:var(--accent);' : 'background:rgba(0,184,148,0.15); color:var(--success);'">
+        <span style="font-size:0.65rem; padding:2px 8px; border-radius:10px; white-space:nowrap;"
+          :style="f.field_type === 'input' ? 'background:rgba(108,92,231,0.2); color:var(--accent);' : 'background:rgba(0,184,148,0.2); color:var(--success);'">
           <strong x-text="f.name"></strong>
-          <span style="opacity:0.7;" x-text="'(' + f.field_type + ') ' + f.description"></span>
+          <span style="opacity:0.6;" x-text="'(' + f.field_type + ')'"></span>
         </span>
       </template>
     </div>
