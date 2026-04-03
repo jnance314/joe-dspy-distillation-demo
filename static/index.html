@@ -130,19 +130,18 @@
       </div>
     </div>
 
-    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:8px;">
-      Each row is a labeled example. Input columns are what the model receives; output columns are the expected correct answer.
-      The optimizer learns from these to find the best prompt. Aim for 30+ examples covering different cases.
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:10px;">
+      Each row is a labeled example the optimizer learns from. Aim for 30+ rows covering different cases.
+      Empty cells mean that field doesn't apply for that row (e.g., compliant copy needs no flagged phrases or suggestion).
     </p>
 
-    <!-- Column guide -->
-    <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">
-      <template x-for="f in task.fields" :key="f.name">
-        <span style="font-size:0.65rem; padding:2px 8px; border-radius:10px; white-space:nowrap;"
-          :style="f.field_type === 'input' ? 'background:rgba(108,92,231,0.2); color:var(--accent);' : 'background:rgba(0,184,148,0.2); color:var(--success);'">
-          <strong x-text="f.name"></strong>
-          <span style="opacity:0.6;" x-text="'(' + f.field_type + ')'"></span>
-        </span>
+    <!-- Column explanations -->
+    <div style="margin-bottom:12px; font-size:0.8rem; line-height:1.8;">
+      <template x-for="f in task.fields" :key="f.name + '-guide'">
+        <div style="display:flex; gap:8px; align-items:baseline;">
+          <code style="min-width:150px; flex-shrink:0; font-size:0.8rem;" x-text="f.name"></code>
+          <span style="color:var(--text-dim);" x-text="(f.field_type === 'input' ? '(input) ' : '(expected output) ') + f.description"></span>
+        </div>
       </template>
     </div>
 
@@ -152,11 +151,7 @@
           <tr>
             <th style="width:30px;">#</th>
             <template x-for="f in task.fields">
-              <th>
-                <span x-text="f.name"></span>
-                <span style="font-size:0.6rem; opacity:0.5; display:block; font-weight:400;"
-                  x-text="f.field_type"></span>
-              </th>
+              <th x-text="f.name"></th>
             </template>
             <th style="width:40px;"></th>
           </tr>
@@ -167,7 +162,8 @@
               <td style="color:var(--text-dim);" x-text="idx + 1"></td>
               <template x-for="f in task.fields">
                 <td>
-                  <textarea x-model="ex[f.name]"                    rows="1" style="min-height:32px;"></textarea>
+                  <textarea x-model="ex[f.name]" rows="1" style="min-height:32px;"
+                    :placeholder="ex[f.name] === '' ? '(empty)' : ''"></textarea>
                 </td>
               </template>
               <td>
