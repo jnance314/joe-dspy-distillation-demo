@@ -277,7 +277,10 @@ def apply_edited_prompt(module, parsed_stages: list[dict]):
                 else predictor_obj)
 
         if stage["instructions"]:
-            pred.signature = pred.signature.with_instructions(stage["instructions"])
+            # Directly set the instructions attribute on the signature
+            pred.signature.__doc__ = stage["instructions"]
+            if hasattr(pred.signature, "instructions"):
+                pred.signature.instructions = stage["instructions"]
 
         pred.demos = stage["demos"]
 

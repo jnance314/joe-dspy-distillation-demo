@@ -245,11 +245,17 @@ document.addEventListener('alpine:init', () => {
       this.editedResults = null;
       this.error = null;
 
-      const columns = this.getEditTabKeys().map(key => ({
-        label: this.getEditTabLabel(key),
-        model: this.getEditTabModel(key),
-        edited_prompt: this.editedPrompts[key] || '',
-      }));
+      // Use simple labels (Monolith, Naive, DSPy) to match Table 1 columns
+      const columns = this.getEditTabKeys().map(key => {
+        let label = 'Monolith';
+        if (key.startsWith('naive:')) label = 'Naive';
+        else if (key.startsWith('dspy:')) label = 'DSPy';
+        return {
+          label,
+          model: this.getEditTabModel(key),
+          edited_prompt: this.editedPrompts[key] || '',
+        };
+      });
 
       try {
         const res = await fetch('/api/eval-edited', {
