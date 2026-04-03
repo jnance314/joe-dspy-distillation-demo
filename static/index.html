@@ -53,100 +53,67 @@
 
     <!-- Signature Fields -->
     <h2 style="margin-top:16px;">Signature Fields</h2>
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+      These define what the model receives (inputs) and what it produces (outputs).
+      The field names must match the column headers in the training data below.
+    </p>
 
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
       <!-- Input fields -->
       <div>
-        <label>Input Fields</label>
-        <div class="fields-list">
-          <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'input')" :key="idx">
-            <div class="field-row">
+        <label>Input Fields <span style="font-weight:400; text-transform:none;">(what the model receives)</span></label>
+        <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'input')" :key="idx">
+          <div style="margin-bottom:8px; padding:10px; background:var(--surface2); border-radius:var(--radius);">
+            <div class="field-row" style="margin-bottom:4px;">
               <input type="text" x-model="f.name" placeholder="field name">
               <input type="text" x-model="f.description" placeholder="description">
               <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
             </div>
-          </template>
-          <button class="btn btn-sm" @click="addField('input')">+ Add Input</button>
-        </div>
+            <p style="font-size:0.75rem; color:var(--text-dim); margin:0;" x-text="getFieldDescription(f)"></p>
+          </div>
+        </template>
+        <button class="btn btn-sm" @click="addField('input')">+ Add Input</button>
       </div>
       <!-- Output fields -->
       <div>
-        <label>Output Fields</label>
-        <div class="fields-list">
-          <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'output')" :key="idx">
-            <div class="field-row">
+        <label>Output Fields <span style="font-weight:400; text-transform:none;">(what the model produces)</span></label>
+        <template x-for="(f, idx) in task.fields.filter(f => f.field_type === 'output')" :key="idx">
+          <div style="margin-bottom:8px; padding:10px; background:var(--surface2); border-radius:var(--radius);">
+            <div class="field-row" style="margin-bottom:4px;">
               <input type="text" x-model="f.name" placeholder="field name">
               <input type="text" x-model="f.description" placeholder="description">
               <button class="btn btn-sm btn-danger" @click="removeField(task.fields.indexOf(f))">&times;</button>
             </div>
-          </template>
-          <button class="btn btn-sm" @click="addField('output')">+ Add Output</button>
-        </div>
+            <p style="font-size:0.75rem; color:var(--text-dim); margin:0;" x-text="getFieldDescription(f)"></p>
+          </div>
+        </template>
+        <button class="btn btn-sm" @click="addField('output')">+ Add Output</button>
       </div>
     </div>
   </div>
 
-  <!-- Metrics -->
+  <!-- Metrics (read-only with explanations) -->
   <div class="card">
     <h2>Evaluation Metrics</h2>
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+      These define how the model's output is scored. The optimizer maximizes the weighted composite of all metrics.
+      Scores range from 0.0 (worst) to 1.0 (best).
+    </p>
 
     <template x-for="(m, idx) in task.metrics" :key="m.name + idx">
       <div style="margin-bottom:12px; padding:12px; background:var(--surface2); border-radius:var(--radius);">
-        <div class="metric-row">
-          <input type="text" x-model="m.name" placeholder="metric name">
-          <select x-model="m.metric_type">
-            <option value="exact_match">Exact Match</option>
-            <option value="f1_phrases">F1 Phrases</option>
-            <option value="rule_quality">Rule Quality</option>
-            <option value="custom">Custom (Python)</option>
-          </select>
-          <select x-model="m.target_field">
-            <template x-for="f in outputFields" :key="f.name">
-              <option :value="f.name" x-text="f.name" :selected="f.name === m.target_field"></option>
-            </template>
-          </select>
-          <div>
-            <input type="range" min="0" max="1" step="0.05" x-model.number="m.weight" style="width:70px;">
-            <span class="weight-display" x-text="m.weight.toFixed(2)"></span>
-          </div>
-          <button class="btn btn-sm btn-danger" @click="removeMetric(idx)">&times;</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <strong style="font-size:0.9rem;" x-text="m.name"></strong>
+          <span style="font-size:0.8rem; color:var(--accent); font-family:var(--mono);"
+            x-text="Math.round(m.weight * 100) + '% weight'"></span>
         </div>
-
-        <!-- Rule quality config -->
-        <template x-if="m.metric_type === 'rule_quality'">
-          <div class="rule-config">
-            <div class="form-group">
-              <label style="text-transform:none;">Banned Words (one per line)</label>
-              <textarea rows="3"
-                :value="(m.rule_config.banned_words || []).join('\n')"
-                @input="m.rule_config.banned_words = $event.target.value.split('\n').filter(w => w.trim())"
-                placeholder="premium quality&#10;best-in-class&#10;innovative solution"></textarea>
-            </div>
-            <div class="checkbox-row">
-              <input type="checkbox" :checked="m.rule_config.no_passive_voice"
-                @change="m.rule_config.no_passive_voice = $event.target.checked">
-              <label>No passive voice</label>
-            </div>
-            <div class="form-group">
-              <label style="text-transform:none;">Max sentence length (words, 0 = disabled)</label>
-              <input type="number" :value="m.rule_config.max_sentence_length || 0"
-                @input="m.rule_config.max_sentence_length = parseInt($event.target.value) || 0"
-                style="width:100px;">
-            </div>
-          </div>
-        </template>
-
-        <!-- Custom code -->
-        <template x-if="m.metric_type === 'custom'">
-          <div class="rule-config">
-            <label style="text-transform:none;">Python metric function</label>
-            <textarea rows="6" x-model="m.custom_code"
-              placeholder="def metric(example, pred, trace=None):&#10;    expected = str(example.field_name).strip()&#10;    predicted = str(pred.field_name).strip()&#10;    return 1.0 if expected == predicted else 0.0"></textarea>
-          </div>
-        </template>
+        <div style="font-size:0.75rem; color:var(--text-dim); margin-bottom:4px;">
+          Scores the <code x-text="m.target_field" style="color:var(--text);"></code> field
+        </div>
+        <p style="font-size:0.8rem; color:var(--text); margin:0; line-height:1.6;"
+          x-text="getMetricDescription(m)"></p>
       </div>
     </template>
-    <button class="btn btn-sm" @click="addMetric()">+ Add Metric</button>
   </div>
 
   <!-- Training Data -->
@@ -159,6 +126,21 @@
       </div>
     </div>
 
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:8px;">
+      Each row is a labeled example. Input columns are what the model receives; output columns are the expected correct answer.
+      The optimizer learns from these to find the best prompt. Aim for 30+ examples covering different cases.
+    </p>
+
+    <!-- Column guide -->
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+      <template x-for="f in task.fields" :key="f.name">
+        <span style="font-size:0.7rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border);"
+          :style="f.field_type === 'input' ? 'background:rgba(108,92,231,0.15); color:var(--accent);' : 'background:rgba(0,184,148,0.15); color:var(--success);'">
+          <strong x-text="f.name"></strong>
+          <span style="opacity:0.7;" x-text="'(' + f.field_type + ') ' + f.description"></span>
+        </span>
+      </template>
+    </div>
 
     <div class="examples-wrap">
       <table class="examples-table">
@@ -166,7 +148,11 @@
           <tr>
             <th style="width:30px;">#</th>
             <template x-for="f in task.fields">
-              <th x-text="f.name"></th>
+              <th>
+                <span x-text="f.name"></span>
+                <span style="font-size:0.6rem; opacity:0.5; display:block; font-weight:400;"
+                  x-text="f.field_type"></span>
+              </th>
             </template>
             <th style="width:40px;"></th>
           </tr>

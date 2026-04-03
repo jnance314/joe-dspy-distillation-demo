@@ -121,6 +121,37 @@ document.addEventListener('alpine:init', () => {
       return this.task.fields.filter(f => f.field_type === 'output');
     },
 
+    // -- Metric descriptions --------------------------------------------------
+
+    getMetricDescription(m) {
+      const field = m.target_field;
+      switch (m.metric_type) {
+        case 'exact_match':
+          return `Compares the model's "${field}" output to the expected value. Case-insensitive. Score: 1.0 if they match, 0.0 if not. Example: expected "true", model says "true" → 1.0; model says "false" → 0.0.`;
+        case 'f1_phrases':
+          return `Parses comma-separated phrases from "${field}" and computes precision + recall (F1) with fuzzy matching. Catches partial matches. Example: expected "premium quality, leverage", model outputs "premium quality, best-in-class" → precision 50%, recall 50%, F1 = 50%.`;
+        case 'rule_quality': {
+          const rules = [];
+          if (m.rule_config?.banned_words?.length) rules.push(`no banned words (${m.rule_config.banned_words.length} phrases)`);
+          if (m.rule_config?.no_passive_voice) rules.push('no passive voice');
+          if (m.rule_config?.max_sentence_length) rules.push(`sentences under ${m.rule_config.max_sentence_length} words`);
+          const ruleStr = rules.length ? rules.join(', ') : 'configured rules';
+          return `Checks "${field}" against structural rules: ${ruleStr}. Each rule that passes adds to the score. Example: 3 rules configured, 2 pass → score 0.67.`;
+        }
+        case 'custom':
+          return `Custom Python scoring function for "${field}". Returns a float between 0.0 (worst) and 1.0 (best). The logic is specific to this task.`;
+        default:
+          return `Scores the "${field}" output.`;
+      }
+    },
+
+    getFieldDescription(f) {
+      if (f.field_type === 'input') {
+        return `This is what the model receives. ${f.description}`;
+      }
+      return `This is what the model produces. ${f.description}. The optimizer scores this against the expected value in the training data.`;
+    },
+
     // -- Run experiment -------------------------------------------------------
 
     async startRun() {
