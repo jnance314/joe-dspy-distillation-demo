@@ -237,14 +237,32 @@ flowchart TD
   </div>
 
   <!-- ============================================================ -->
-  <h2>Walkthrough: Default Task</h2>
+  <h2>Available Tasks</h2>
 
-  <p>Let's walk through the tool using the built-in Liquid Death brand voice example.</p>
+  <p>The tool comes with three pre-built tasks. Select one from the task bar at the top of the page. You can edit any task's data, guidelines, and metrics after loading.</p>
+
+  <h3>1. Brand Voice Compliance (Liquid Death)</h3>
+  <p>Given marketing copy and brand guidelines, check if the copy is on-brand. Flags specific problematic phrases and suggests on-brand replacements. Single-stage ChainOfThought module. 53 labeled examples across compliant and non-compliant copy.</p>
+
+  <h3>2. Persona Adherence</h3>
+  <p>Given a persona's scraped messages and a conversation thread, generate an in-character reply that matches their writing style. Single-stage ChainOfThought module. 36 labeled examples across 4 synthetic personas (snarky tech bro, warm grandma blogger, corporate executive, gen-z meme enthusiast). Metrics: vocabulary overlap, sentence length similarity, formality delta, response relevance.</p>
+
+  <h3>3. Multi-Source Research Synthesizer</h3>
+  <p>Given multiple source documents and a research question, produce a structured synthesis with key findings, contradictions, gaps, and an executive summary. <strong>Multi-hop module</strong> with 3 stages: per-source extraction, cross-referencing, structured output. MIPROv2 optimizes all 3 stages jointly. 10 research scenarios with planted findings and contradictions. Metrics: source coverage, claim extraction F1, contradiction detection, no hallucination, structural completeness.</p>
+
+  <div class="tip">
+    <strong>Multi-hop architecture:</strong> The research synthesizer is architecturally different from the other two tasks. It uses 3 separate DSPy predictors composed in a pipeline. When you view the production prompt for this task, you'll see 3 stages, each with its own optimized instructions and few-shot examples.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>Walkthrough: Running a Task</h2>
+
+  <p>Let's walk through the tool using the Brand Voice Compliance task as an example.</p>
 
   <div class="step">
     <span class="step-num">1</span>
-    <strong>Load the default task</strong>
-    <p>Click "Default Task" and make sure "Use default synthetic data" is checked. This pre-fills everything: guidelines, fields, metrics, and 53 labeled examples.</p>
+    <strong>Select a task</strong>
+    <p>Click one of the task buttons at the top (e.g., "brand voice liquid death"). This loads the full configuration: guidelines, fields, metrics, and labeled examples.</p>
   </div>
 
   <div class="step">
@@ -309,60 +327,42 @@ flowchart TD
   </div>
 
   <!-- ============================================================ -->
-  <h2>Walkthrough: Creating a Fresh Task</h2>
+  <h2>Edit & Re-evaluate (Human-in-the-Loop)</h2>
 
-  <p>When you want to optimize a prompt for your own task:</p>
+  <p>After the experiment runs, you can edit any column's prompt and re-evaluate to see if your changes help or hurt. This is the "creative director" workflow &mdash; DSPy does the heavy lifting, then a human fine-tunes the result.</p>
 
   <div class="step">
     <span class="step-num">1</span>
-    <strong>Click "Fresh Task"</strong>
-    <p>This clears everything and gives you a blank form with starter fields.</p>
+    <strong>Run the experiment</strong>
+    <p>Table 1 appears with the original results: Monolith, Naive, and DSPy columns.</p>
   </div>
 
   <div class="step">
     <span class="step-num">2</span>
-    <strong>Define your task</strong>
-    <p>Fill in the name, description, and guidelines. Think of the description as "what would you tell a new hire to do?" and the guidelines as "the reference material they'd need."</p>
+    <strong>Open the "Edit & Re-evaluate" section</strong>
+    <p>Below Table 1, you'll see tabs for each column. Click a tab to see that column's full prompt &mdash; the instructions and few-shot examples that the model actually sees.</p>
   </div>
 
   <div class="step">
     <span class="step-num">3</span>
-    <strong>Set up signature fields</strong>
-    <p>Add input fields (what goes in) and output fields (what comes out). Remove the starter fields if they don't match your task. Every output field needs a description that tells the model exactly what format to use.</p>
+    <strong>Edit the prompt</strong>
+    <p>Make your changes. You can rewrite instructions, remove a few-shot example, add a rule, or completely restructure the prompt. The "Reset to Original" button restores the unedited version.</p>
   </div>
 
   <div class="step">
     <span class="step-num">4</span>
-    <strong>Configure metrics</strong>
-    <p>Add one metric per output field. Pick the type that matches the field:</p>
-    <ul>
-      <li>Classification/label &rarr; <strong>Exact Match</strong></li>
-      <li>List of items &rarr; <strong>F1 Phrases</strong></li>
-      <li>Free text with rules &rarr; <strong>Rule Quality</strong></li>
-    </ul>
-    <p>Set weights based on what matters most for your use case.</p>
+    <strong>Click "Re-evaluate All Edits"</strong>
+    <p>This runs a fast evaluation (no optimization, just scoring on the test set) with your edited prompts. Takes seconds, not minutes.</p>
   </div>
 
   <div class="step">
     <span class="step-num">5</span>
-    <strong>Add training data</strong>
-    <p>Click "+ Add Row" or "Import CSV" to add labeled examples. Each row needs values for ALL fields (inputs and outputs). For rows where an output doesn't apply (e.g., no suggestion needed for compliant copy), use an empty string.</p>
+    <strong>Compare Table 1 vs Table 2</strong>
+    <p>Table 2 appears below with the edited results. Each metric shows a <span style="color:var(--success);">green</span> or <span style="color:var(--danger);">red</span> delta indicating whether your edit improved or degraded that metric vs the original.</p>
   </div>
 
-  <div class="step">
-    <span class="step-num">6</span>
-    <strong>Run and iterate</strong>
-    <p>Click "Run Optimization" and review results. If the scores are low, you likely need more examples, clearer guidelines, or better metric configuration.</p>
-  </div>
-
-  <div class="warning">
-    <strong>Common pitfalls:</strong>
-    <ul style="margin:4px 0 0;">
-      <li>Too few examples (&lt;20) &mdash; the optimizer doesn't have enough signal</li>
-      <li>Vague output descriptions &mdash; the model guesses the format instead of following it</li>
-      <li>Missing metrics on output fields &mdash; the optimizer ignores un-scored fields</li>
-      <li>Inconsistent labeling in examples &mdash; "True" vs "true" vs "yes" confuses exact match</li>
-    </ul>
+  <div class="tip">
+    <strong>Typical finding:</strong> The creative director edits the DSPy-optimized prompt thinking they can improve it. Table 2 shows their edits either matched or slightly degraded performance. This validates that automatic optimization is hard to beat manually &mdash; which is the whole point of the demo.
   </div>
 
   <!-- ============================================================ -->

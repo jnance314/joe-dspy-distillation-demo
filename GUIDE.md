@@ -103,52 +103,67 @@ The data is automatically split:
 | **Eval Trials** | How many evaluation runs per config. More = stabler numbers. Default 10, use 30+ for presentations. |
 | **Threads** | Parallel API calls. Default 50 works well for Gemini. |
 
-## Walkthrough: Default Task
+## Available Tasks
 
-### Step 1: Load the default task
+The tool comes with three pre-built tasks. Select one from the task bar at the top.
 
-Click "Default Task" and check "Use default synthetic data". This pre-fills everything with the Liquid Death brand voice example: guidelines, fields, metrics, and 53 labeled examples.
+### 1. Brand Voice Compliance (Liquid Death)
 
-### Step 2: Review what's configured
+Given marketing copy and brand guidelines, check if the copy is on-brand. Flags problematic phrases, suggests replacements. Single-stage module, 53 examples.
 
-- **Guidelines**: Liquid Death's brand voice rules -- irreverent, anti-corporate, punk. Banned phrases like "premium quality", "leverage". Preferred alternatives like "purchase" becomes "grab".
-- **Input**: `marketing_copy` -- the text to check
-- **Outputs**: `compliant` (true/false), `flagged_phrases` (what's wrong), `suggestion` (the fix)
-- **Metrics**: Exact match on compliance (40%), F1 on flagged phrases (30%), rule quality on suggestions (30%)
+### 2. Persona Adherence
 
-### Step 3: Check model configuration
+Given a persona's scraped messages and a conversation thread, generate an in-character reply. Single-stage module. 36 examples across 4 personas (snarky tech bro, warm grandma, corporate exec, gen-z meme enthusiast). Metrics: vocabulary overlap, sentence length similarity, formality delta, response relevance.
 
-Defaults:
-- **Teacher**: `gemini/gemini-3.1-pro-preview` ($2.00/M tokens)
-- **Student**: `gemini/gemini-2.5-flash-lite` ($0.10/M tokens)
+### 3. Multi-Source Research Synthesizer
 
-### Step 4: Click "Run Optimization"
+Given multiple source documents and a research question, produce a structured synthesis. **Multi-hop module** (3 stages: extract per source, cross-reference, format output). MIPROv2 optimizes all 3 stages jointly. 10 research scenarios with planted findings and contradictions. The production prompt for this task contains 3 separate stage prompts.
 
-The pipeline runs:
+## Walkthrough
+
+### Step 1: Select a task
+
+Click a task button at the top (e.g., "brand voice liquid death"). This loads the full config: guidelines, fields, metrics, and labeled examples. You can edit anything after loading.
+
+### Step 2: Configure models
+
+Pick a teacher model (expensive, used only during optimization) and one or more student models (cheap, deployed in production). Defaults work well for Gemini.
+
+### Step 3: Run Optimization
+
+Click "Run Optimization". The pipeline:
 1. Evaluates the teacher model with all examples (monolith baseline)
-2. Evaluates the student model zero-shot (naive baseline)
-3. Runs MIPROv2 to find the best prompt for the student
-4. Evaluates the student with the optimized prompt
+2. Evaluates each student model zero-shot (naive baseline)
+3. Runs MIPROv2 to find the best prompt for each student
+4. Evaluates each student with the optimized prompt
 
 Takes a few minutes. Progress bar updates as each step completes.
 
-### Step 5: Read the results
+### Step 4: Read Table 1 (original results)
 
-The results table shows three columns per student model:
-- **Monolith**: expensive model doing the task. The quality ceiling at highest cost.
-- **Naive**: cheap model with no optimization. The floor.
-- **DSPy**: cheap model with the optimized prompt. Should be close to monolith at a fraction of the cost.
+Three columns per student model:
+- **Monolith**: expensive model. The quality ceiling.
+- **Naive**: cheap model, no optimization. The floor.
+- **DSPy**: cheap model with optimized prompt. Should match or beat monolith.
 
-Green = best in that row. You want DSPy to match or beat the monolith.
+Green = best in that row.
 
-### Step 6: Download the production prompt
+### Step 5: View production prompts
 
-Click the download button to get a `.txt` file containing:
-- **System instructions** -- use as your system prompt in any API
-- **Few-shot examples** -- include in the conversation
-- **User message template** -- where you insert each new request
+Below the results, each student model's optimized prompt is shown in a textarea. Copy to clipboard or download as .txt. Use with any LLM API -- no DSPy needed in production.
 
-Works with any LLM API. No DSPy dependency needed in production.
+## Edit & Re-evaluate (Human-in-the-Loop)
+
+After the experiment runs, you can edit any column's prompt and re-evaluate.
+
+1. **Open "Edit & Re-evaluate"** -- tabs for each column (Monolith, Naive, DSPy)
+2. **Edit the prompt** -- rewrite instructions, remove demos, add rules
+3. **Click "Re-evaluate All Edits"** -- fast eval pass, no optimization
+4. **Table 2 appears** below Table 1 with edited results + green/red deltas
+
+This is the "creative director" workflow. DSPy does the heavy lifting, then a human fine-tunes. The deltas show exactly whether edits helped or hurt.
+
+> **Typical finding:** Manual edits to the DSPy-optimized prompt either match or slightly degrade performance, validating that automatic optimization is hard to beat.
 
 ## How Evaluation Works
 
@@ -199,36 +214,34 @@ Each configuration is evaluated N times on data never seen during optimization. 
 | **+/-** | Standard deviation across eval trials. Small = stable. Large = model output varies between runs. |
 | **Green highlight** | Best score in that row. For latency, lowest (fastest) is highlighted. |
 
-## Creating a Fresh Task
+## CLI Usage
 
-1. Click "Fresh Task" -- clears the form
-2. Fill in name, description, and guidelines
-3. Add input fields (what goes in) and output fields (what comes out)
-4. Add one metric per output field with appropriate type and weight
-5. Add 30-50 labeled examples via "+ Add Row" or "Import CSV"
-6. Pick teacher and student models
-7. Run and iterate
+The CLI demo uses the same engine as the web UI:
 
-### Common Pitfalls
+```bash
+# Default task (brand voice)
+uv run demo.py
 
-- **Too few examples** (<20) -- the optimizer doesn't have enough signal
-- **Vague output descriptions** -- the model guesses format instead of following it
-- **Missing metrics on output fields** -- the optimizer ignores un-scored fields
-- **Inconsistent labeling** -- "True" vs "true" vs "yes" confuses exact match
+# Different task
+uv run demo.py --task tasks/persona_adherence.json
 
-## Adapting for a Different Task (Developer Guide)
+# Multi-hop task
+uv run demo.py --task tasks/research_synthesizer.json
 
-If you want to fork this repo and adapt it for a completely different task without using the web UI:
+# Quick test (fewer trials)
+uv run demo.py --trials 3
 
-**Files that change** (the task-specific parts):
-- `brand/guidelines.py` -- swap in your domain's rules and context
-- `brand/trainset.py`, `brand/valset.py`, `brand/testset.py` -- new labeled examples
-- `metrics.py` -- new scoring logic for your outputs
-- `demo.py` -- update the `BrandCompliance` signature and `BrandComplianceChecker` module
+# Custom models
+uv run demo.py --teacher openai/gpt-4.1 --students gemini/gemini-2.5-flash-lite openai/gpt-4.1-nano
+```
 
-**Files that stay the same** (the DSPy plumbing):
-- `core/` -- the entire engine, metric factories, signature builder
-- `server/` -- the entire web server
-- `static/` -- the entire frontend
+## Adding a New Task (Developer Guide)
 
-Or just use the web UI's "Fresh Task" mode and skip editing code entirely.
+To add a new pre-built task, fork the repo and:
+
+1. **Create a module** in `core/modules/` -- a `dspy.Module` subclass. For single-stage tasks, copy `brand_voice.py`. For multi-hop, see `research_synthesizer.py`.
+2. **Register it** in `core/modules/__init__.py` with a `module_key`.
+3. **Create a task JSON** in `tasks/` with fields, metrics, examples, and `module_key`.
+4. The web UI and CLI automatically pick it up.
+
+**Files that stay the same:** `core/engine.py`, `server/`, `static/`, `core/metrics_builtin.py`. The plumbing is task-agnostic.
