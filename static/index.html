@@ -33,7 +33,10 @@
   <!-- Task Configuration -->
   <div class="card">
     <h2>Task Configuration</h2>
-
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
+      This is the task that the model will be optimized for. The name identifies the task, and the description
+      tells the model what it's supposed to do — it's the first thing the model reads before processing any input.
+    </p>
 
     <div class="form-row">
       <div class="form-group">
@@ -41,20 +44,25 @@
         <input type="text" x-model="task.name" placeholder="e.g., Brand Voice Compliance">
       </div>
       <div class="form-group">
-        <label>Description (becomes prompt preamble)</label>
+        <label>Description</label>
         <input type="text" x-model="task.description" placeholder="e.g., Check if copy matches brand guidelines...">
       </div>
     </div>
 
     <div class="form-group">
       <label>Guidelines / Context</label>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin:0 0 6px;">
+        The rules and reference material the model needs to do this task. This entire block is included
+        in every prompt — think of it as the "brief" you'd give a new team member before they start working.
+      </p>
       <textarea rows="6" x-model="task.guidelines" placeholder="Paste your brand guidelines, rules, context..."></textarea>
     </div>
 
     <!-- Signature Fields -->
     <h2 style="margin-top:16px;">Signature Fields</h2>
     <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
-      What the model receives (inputs) and produces (outputs). Field names match the training data columns.
+      For this task, these are the specific pieces of information that go in and come out.
+      Each field becomes a column in the training data table below.
     </p>
 
     <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -100,8 +108,9 @@
   <div class="card">
     <h2>Evaluation Metrics</h2>
     <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">
-      These define how the model's output is scored. The optimizer maximizes the weighted composite of all metrics.
-      Scores range from 0.0 (worst) to 1.0 (best).
+      These are how we measure whether the model got it right. Each metric checks one specific aspect
+      of the output and gives it a score from 0 to 1. The optimizer's goal is to maximize the weighted
+      total across all of these.
     </p>
 
     <template x-for="(m, idx) in task.metrics" :key="m.name + idx">
@@ -131,8 +140,10 @@
     </div>
 
     <p style="font-size:0.8rem; color:var(--text-dim); margin-bottom:10px;">
-      Each row is a labeled example the optimizer learns from. Aim for 30+ rows covering different cases.
-      Empty cells mean that field doesn't apply for that row (e.g., compliant copy needs no flagged phrases or suggestion).
+      These are labeled examples that show the model what "correct" looks like for this task.
+      Each row is one complete scenario: the input the model would receive, and exactly what
+      it should output. The optimizer uses these to find the best prompt. Aim for 30+ rows
+      covering a variety of cases. Empty cells mean that field doesn't apply for that row.
     </p>
 
     <!-- Column explanations -->
@@ -140,7 +151,11 @@
       <template x-for="f in task.fields" :key="f.name + '-guide'">
         <div style="display:flex; gap:8px; align-items:baseline;">
           <code style="min-width:150px; flex-shrink:0; font-size:0.8rem;" x-text="f.name"></code>
-          <span style="color:var(--text-dim);" x-text="(f.field_type === 'input' ? '(input) ' : '(expected output) ') + f.description"></span>
+          <span style="color:var(--text-dim);"
+            x-text="f.field_type === 'input'
+              ? 'What goes in — ' + f.description.charAt(0).toLowerCase() + f.description.slice(1)
+              : 'What should come out — ' + f.description.charAt(0).toLowerCase() + f.description.slice(1)">
+          </span>
         </div>
       </template>
     </div>

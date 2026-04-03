@@ -125,31 +125,27 @@ document.addEventListener('alpine:init', () => {
 
     getMetricDescription(m) {
       const field = m.target_field;
+      const fieldDef = this.task.fields.find(f => f.name === field);
+      const fieldDesc = fieldDef ? fieldDef.description : field;
+
       switch (m.metric_type) {
         case 'exact_match':
-          return `Compares the model's "${field}" output to the expected value. Case-insensitive. Score: 1.0 if they match, 0.0 if not. Example: expected "true", model says "true" → 1.0; model says "false" → 0.0.`;
+          return `Checks whether the model's "${field}" matches the expected answer exactly (case-insensitive). For example, if the correct answer is "true" and the model says "true", it scores 1.0. If it says "false", it scores 0.0.`;
         case 'f1_phrases':
-          return `Parses comma-separated phrases from "${field}" and computes precision + recall (F1) with fuzzy matching. Catches partial matches. Example: expected "premium quality, leverage", model outputs "premium quality, best-in-class" → precision 50%, recall 50%, F1 = 50%.`;
+          return `Measures how well the model identifies all the correct phrases in "${field}". Rewards finding the right ones (precision) and not missing any (recall), combining both into an F1 score. Partial credit for catching some but not all.`;
         case 'rule_quality': {
           const rules = [];
-          if (m.rule_config?.banned_words?.length) rules.push(`no banned words (${m.rule_config.banned_words.length} phrases)`);
-          if (m.rule_config?.no_passive_voice) rules.push('no passive voice');
-          if (m.rule_config?.max_sentence_length) rules.push(`sentences under ${m.rule_config.max_sentence_length} words`);
-          const ruleStr = rules.length ? rules.join(', ') : 'configured rules';
-          return `Checks "${field}" against structural rules: ${ruleStr}. Each rule that passes adds to the score. Example: 3 rules configured, 2 pass → score 0.67.`;
+          if (m.rule_config?.banned_words?.length) rules.push(`doesn't contain any of ${m.rule_config.banned_words.length} banned phrases`);
+          if (m.rule_config?.no_passive_voice) rules.push('avoids passive voice');
+          if (m.rule_config?.max_sentence_length) rules.push(`keeps sentences under ${m.rule_config.max_sentence_length} words`);
+          const ruleStr = rules.length ? rules.join('; ') : 'configured writing rules';
+          return `Checks whether the model's "${field}" follows the writing rules: ${ruleStr}. Each rule that passes adds to the score. All rules pass = 1.0.`;
         }
         case 'custom':
-          return `Custom Python scoring function for "${field}". Returns a float between 0.0 (worst) and 1.0 (best). The logic is specific to this task.`;
+          return `A task-specific scoring function for "${field}" (${fieldDesc}). Compares the model's output to the expected answer and returns a score from 0.0 (completely wrong) to 1.0 (perfect match).`;
         default:
-          return `Scores the "${field}" output.`;
+          return `Scores how well the model's "${field}" output matches what was expected.`;
       }
-    },
-
-    getFieldDescription(f) {
-      if (f.field_type === 'input') {
-        return `This is what the model receives. ${f.description}`;
-      }
-      return `This is what the model produces. ${f.description}. The optimizer scores this against the expected value in the training data.`;
     },
 
     // -- Run experiment -------------------------------------------------------
