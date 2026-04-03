@@ -102,13 +102,16 @@ def eval_edited(request: EditedEvalRequest) -> dict:
         if parsed_stages:
             apply_edited_prompt(module, parsed_stages)
 
-        scores, latency = evaluate(testset, module, composite_fn,
-                                   num_trials=request.num_trials,
-                                   threads=request.threads)
+        scores, latency, tokens = evaluate(testset, module, composite_fn,
+                                             num_trials=request.num_trials,
+                                             threads=request.threads,
+                                             lm=lm, model_id=col.model)
 
         cost = get_model_cost(col.model) or {"input_cost": None, "output_cost": None}
 
-        log.info("  %s composite: %.1f%%", col.label, scores["composite"][0] * 100)
+        log.info("  %s composite: %.1f%%, tokens: %d in / %d out",
+                 col.label, scores["composite"][0] * 100,
+                 tokens.get("avg_prompt", 0), tokens.get("avg_completion", 0))
 
         results.append({
             "label": col.label,
@@ -116,6 +119,7 @@ def eval_edited(request: EditedEvalRequest) -> dict:
             "scores": {k: {"mean": v[0], "std": v[1]} for k, v in scores.items()},
             "latency": {"mean": latency[0], "std": latency[1]},
             "cost": cost,
+            "tokens": tokens,
         })
 
     return {"columns": results}

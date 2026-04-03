@@ -303,9 +303,21 @@
               </template>
             </tr>
             <tr>
-              <td>cost (in/out per 1M)</td>
-              <template x-for="(col, ci) in getResultColumns()">
-                <td :class="{ best: isCheapest(ci, getResultColumns()) }" x-text="formatCost(col.cost)"></td>
+              <td>avg tokens (in/out)</td>
+              <template x-for="col in getResultColumns()">
+                <td x-text="formatTokens(col.tokens)"></td>
+              </template>
+            </tr>
+            <tr>
+              <td>est. cost / 1K reqs</td>
+              <template x-for="col in getResultColumns()">
+                <td x-text="formatEstCost(col.tokens)"></td>
+              </template>
+            </tr>
+            <tr>
+              <td style="color:var(--text-dim); font-size:0.75rem;">model price (in/out per 1M)</td>
+              <template x-for="col in getResultColumns()">
+                <td style="font-size:0.75rem; opacity:0.6;" x-text="formatCost(col.cost)"></td>
               </template>
             </tr>
           </tbody>
@@ -402,14 +414,26 @@
             </template>
             <tr>
               <td>latency</td>
-              <template x-for="(col, ci) in editedResults">
+              <template x-for="col in editedResults">
                 <td x-text="formatLatency(col.latency)"></td>
               </template>
             </tr>
             <tr>
-              <td>cost (in/out per 1M)</td>
-              <template x-for="(col, ci) in editedResults">
-                <td x-text="formatCost(col.cost)"></td>
+              <td>avg tokens (in/out)</td>
+              <template x-for="col in editedResults">
+                <td x-text="formatTokens(col.tokens)"></td>
+              </template>
+            </tr>
+            <tr>
+              <td>est. cost / 1K reqs</td>
+              <template x-for="col in editedResults">
+                <td x-text="formatEstCost(col.tokens)"></td>
+              </template>
+            </tr>
+            <tr>
+              <td style="color:var(--text-dim); font-size:0.75rem;">model price (in/out per 1M)</td>
+              <template x-for="col in editedResults">
+                <td style="font-size:0.75rem; opacity:0.6;" x-text="formatCost(col.cost)"></td>
               </template>
             </tr>
           </tbody>

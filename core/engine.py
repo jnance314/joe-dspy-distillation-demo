@@ -53,6 +53,32 @@ def split_examples(task_config: TaskConfig) -> tuple[list, list, list]:
     return to_dspy(train_dicts), to_dspy(val_dicts), to_dspy(test_dicts)
 
 
+# -- Token usage tracking ----------------------------------------------------
+
+def _get_and_clear_token_usage(lm) -> dict:
+    """Extract accumulated token counts from an LM's history, then clear it."""
+    total_prompt = 0
+    total_completion = 0
+    if hasattr(lm, 'history'):
+        for call in lm.history:
+            usage = call.get('usage', {}) if isinstance(call, dict) else {}
+            total_prompt += usage.get('prompt_tokens', 0)
+            total_completion += usage.get('completion_tokens', 0)
+        lm.history.clear()
+    return {"prompt_tokens": total_prompt, "completion_tokens": total_completion}
+
+
+def _compute_est_cost(avg_prompt: float, avg_completion: float, model_id: str) -> float:
+    """Compute estimated cost per 1K requests based on avg tokens and model pricing."""
+    cost = get_model_cost(model_id)
+    if not cost or cost.get("input_cost") is None:
+        return 0.0
+    input_cost_per_token = cost["input_cost"] / 1_000_000
+    output_cost_per_token = cost["output_cost"] / 1_000_000
+    cost_per_request = (avg_prompt * input_cost_per_token) + (avg_completion * output_cost_per_token)
+    return round(cost_per_request * 1000, 4)
+
+
 # -- Evaluation --------------------------------------------------------------
 
 def _eval_one(ex, program, composite_fn):
@@ -76,10 +102,14 @@ def _stddev(values):
     return math.sqrt(sum((x - mean) ** 2 for x in values) / len(values))
 
 
-def evaluate_once(dataset, program, composite_fn, threads=THREADS):
-    """Single pass parallel evaluation. Returns (scores_dict, avg_latency_ms)."""
+def evaluate_once(dataset, program, composite_fn, lm=None, threads=THREADS):
+    """Single pass parallel evaluation. Returns (scores_dict, avg_latency_ms, token_usage)."""
     all_scores = {}
     latencies = []
+
+    # Clear history before the pass so we only count this pass's tokens
+    if lm and hasattr(lm, 'history'):
+        lm.history.clear()
 
     with ThreadPoolExecutor(max_workers=threads) as pool:
         futures = {pool.submit(_eval_one, ex, program, composite_fn): ex for ex in dataset}
@@ -91,20 +121,36 @@ def evaluate_once(dataset, program, composite_fn, threads=THREADS):
 
     avg_scores = {k: sum(v) / len(v) for k, v in all_scores.items()}
     avg_latency = sum(latencies) / len(latencies)
-    return avg_scores, avg_latency
+    tokens = _get_and_clear_token_usage(lm) if lm else {"prompt_tokens": 0, "completion_tokens": 0}
+    return avg_scores, avg_latency, tokens
 
 
-def evaluate(dataset, program, composite_fn, num_trials=10, threads=THREADS):
-    """Multi-trial evaluation. Returns {metric: (mean, stddev)}, (lat_mean, lat_stddev)."""
+def evaluate(dataset, program, composite_fn, num_trials=10, threads=THREADS,
+             lm=None, model_id: str = ""):
+    """Multi-trial evaluation with token tracking.
+
+    Returns: {metric: (mean, stddev)}, (lat_mean, lat_stddev), token_usage_dict
+    where token_usage_dict = {
+        "avg_prompt": float, "avg_completion": float,
+        "total_prompt": int, "total_completion": int,
+        "est_cost_per_1k": float
+    }
+    """
     log.info("Starting evaluation: %d trials x %d examples (%d threads)",
              num_trials, len(dataset), threads)
     t0 = time.perf_counter()
     all_scores = {}
     all_latencies = []
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    total_examples = 0
 
     for trial in range(num_trials):
-        scores, latency = evaluate_once(dataset, program, composite_fn, threads)
+        scores, latency, tokens = evaluate_once(dataset, program, composite_fn, lm, threads)
         all_latencies.append(latency)
+        total_prompt_tokens += tokens["prompt_tokens"]
+        total_completion_tokens += tokens["completion_tokens"]
+        total_examples += len(dataset)
         for k, v in scores.items():
             all_scores.setdefault(k, []).append(v)
         if (trial + 1) % max(1, num_trials // 5) == 0 or trial == num_trials - 1:
@@ -114,9 +160,24 @@ def evaluate(dataset, program, composite_fn, num_trials=10, threads=THREADS):
     elapsed = time.perf_counter() - t0
     agg = {k: (sum(v) / len(v), _stddev(v)) for k, v in all_scores.items()}
     lat_agg = (sum(all_latencies) / len(all_latencies), _stddev(all_latencies))
-    log.info("Evaluation complete in %.1fs -- composite: %.1f%% +/- %.1f%%, avg latency: %.0fms",
-             elapsed, agg["composite"][0] * 100, agg["composite"][1] * 100, lat_agg[0])
-    return agg, lat_agg
+
+    avg_prompt = total_prompt_tokens / total_examples if total_examples else 0
+    avg_completion = total_completion_tokens / total_examples if total_examples else 0
+    est_cost = _compute_est_cost(avg_prompt, avg_completion, model_id)
+
+    token_usage = {
+        "avg_prompt": round(avg_prompt),
+        "avg_completion": round(avg_completion),
+        "total_prompt": total_prompt_tokens,
+        "total_completion": total_completion_tokens,
+        "est_cost_per_1k": est_cost,
+    }
+
+    log.info("Evaluation complete in %.1fs -- composite: %.1f%% +/- %.1f%%, "
+             "avg latency: %.0fms, avg tokens: %d in / %d out, est $%.4f/1K reqs",
+             elapsed, agg["composite"][0] * 100, agg["composite"][1] * 100,
+             lat_agg[0], avg_prompt, avg_completion, est_cost)
+    return agg, lat_agg, token_usage
 
 
 # -- Monolith builder --------------------------------------------------------
@@ -332,7 +393,9 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
     progress(f"Evaluating monolith ({teacher_model.split('/')[-1]})...", 10)
     dspy.configure(lm=teacher_lm)
     monolith = build_monolith(task_config, trainset)
-    mono_scores, mono_latency = evaluate(testset, monolith, composite_fn, num_trials, threads)
+    mono_scores, mono_latency, mono_tokens = evaluate(
+        testset, monolith, composite_fn, num_trials, threads,
+        lm=teacher_lm, model_id=teacher_model)
 
     teacher_cost = get_model_cost(teacher_model) or {"input_cost": None, "output_cost": None}
     monolith_prompt = export_prompt(monolith)
@@ -342,6 +405,7 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
             "scores": {k: {"mean": v[0], "std": v[1]} for k, v in mono_scores.items()},
             "latency": {"mean": mono_latency[0], "std": mono_latency[1]},
             "cost": teacher_cost,
+            "tokens": mono_tokens,
             "prompt": monolith_prompt,
         },
         "students": {},
@@ -363,7 +427,9 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         progress(f"Evaluating {short} naive...", base_pct)
         dspy.configure(lm=student_lm)
         naive_module = get_module(task_config)
-        naive_scores, naive_latency = evaluate(testset, naive_module, composite_fn, num_trials, threads)
+        naive_scores, naive_latency, naive_tokens = evaluate(
+            testset, naive_module, composite_fn, num_trials, threads,
+            lm=student_lm, model_id=student_model)
         naive_prompt = export_prompt(naive_module)
 
         # Optimize
@@ -374,7 +440,9 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
         # Optimized eval
         progress(f"Evaluating {short} optimized...", base_pct + int(60 / n_students))
         dspy.configure(lm=student_lm)
-        opt_scores, opt_latency = evaluate(testset, optimized, composite_fn, num_trials, threads)
+        opt_scores, opt_latency, opt_tokens = evaluate(
+            testset, optimized, composite_fn, num_trials, threads,
+            lm=student_lm, model_id=student_model)
 
         # Export prompt
         prompt = export_prompt(optimized)
@@ -384,11 +452,13 @@ def run_full_pipeline(task_config: TaskConfig, teacher_model: str,
             "naive": {
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in naive_scores.items()},
                 "latency": {"mean": naive_latency[0], "std": naive_latency[1]},
+                "tokens": naive_tokens,
                 "prompt": naive_prompt,
             },
             "optimized": {
                 "scores": {k: {"mean": v[0], "std": v[1]} for k, v in opt_scores.items()},
                 "latency": {"mean": opt_latency[0], "std": opt_latency[1]},
+                "tokens": opt_tokens,
             },
             "cost": student_cost,
             "prompt": prompt,
@@ -421,20 +491,30 @@ def _generate_summary(results: dict, teacher_model: str) -> str:
         # Build a text representation of the results for the LM
         lines = []
         mono = results["monolith"]
+        mono_tok = mono.get("tokens", {})
         lines.append(f"Monolith ({mono['model'].split('/')[-1]}):")
         lines.append(f"  Composite: {mono['scores']['composite']['mean']:.1%}")
         lines.append(f"  Latency: {mono['latency']['mean']:.0f}ms")
         if mono.get("cost", {}).get("input_cost"):
-            lines.append(f"  Cost: ${mono['cost']['input_cost']}/M input, ${mono['cost']['output_cost']}/M output")
+            lines.append(f"  Model price: ${mono['cost']['input_cost']}/M input, ${mono['cost']['output_cost']}/M output")
+        if mono_tok.get("avg_prompt"):
+            lines.append(f"  Avg tokens per request: {mono_tok['avg_prompt']} input, {mono_tok['avg_completion']} output")
+            lines.append(f"  Estimated cost per 1K requests: ${mono_tok.get('est_cost_per_1k', 0):.4f}")
 
         for model, data in results["students"].items():
             short = model.split("/")[-1]
             cost = data.get("cost", {})
             cost_str = f"${cost['input_cost']}/M input, ${cost['output_cost']}/M output" if cost.get("input_cost") else "unknown"
+            naive_tok = data["naive"].get("tokens", {})
+            opt_tok = data["optimized"].get("tokens", {})
 
-            lines.append(f"\n{short} (cost: {cost_str}):")
+            lines.append(f"\n{short} (model price: {cost_str}):")
             lines.append(f"  Naive composite: {data['naive']['scores']['composite']['mean']:.1%}, latency: {data['naive']['latency']['mean']:.0f}ms")
+            if naive_tok.get("avg_prompt"):
+                lines.append(f"  Naive avg tokens: {naive_tok['avg_prompt']} in / {naive_tok['avg_completion']} out, est ${naive_tok.get('est_cost_per_1k', 0):.4f}/1K reqs")
             lines.append(f"  DSPy optimized composite: {data['optimized']['scores']['composite']['mean']:.1%}, latency: {data['optimized']['latency']['mean']:.0f}ms")
+            if opt_tok.get("avg_prompt"):
+                lines.append(f"  DSPy avg tokens: {opt_tok['avg_prompt']} in / {opt_tok['avg_completion']} out, est ${opt_tok.get('est_cost_per_1k', 0):.4f}/1K reqs")
 
             for metric_name in data["naive"]["scores"]:
                 if metric_name == "composite":

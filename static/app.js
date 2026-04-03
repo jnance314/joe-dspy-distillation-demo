@@ -351,12 +351,13 @@ document.addEventListener('alpine:init', () => {
       cols.push({
         label: 'Monolith', model: mono.model.split('/').pop(),
         scores: mono.scores, latency: mono.latency, cost: mono.cost,
+        tokens: mono.tokens,
       });
       for (const [model, data] of Object.entries(this.results.students)) {
         const short = model.split('/').pop();
         const cost = data.cost;
-        cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency, cost });
-        cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency, cost });
+        cols.push({ label: 'Naive', model: short, scores: data.naive.scores, latency: data.naive.latency, cost, tokens: data.naive.tokens });
+        cols.push({ label: 'DSPy', model: short, scores: data.optimized.scores, latency: data.optimized.latency, cost, tokens: data.optimized.tokens });
       }
       return cols;
     },
@@ -383,6 +384,18 @@ document.addEventListener('alpine:init', () => {
     formatCost(cost) {
       if (!cost || cost.input_cost === null) return '-';
       return `$${cost.input_cost} / $${cost.output_cost}`;
+    },
+
+    formatTokens(tokens) {
+      if (!tokens || !tokens.avg_prompt) return '-';
+      const fmtK = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);
+      return `${fmtK(tokens.avg_prompt)} in / ${fmtK(tokens.avg_completion)} out`;
+    },
+
+    formatEstCost(tokens) {
+      if (!tokens || !tokens.est_cost_per_1k) return '-';
+      const c = tokens.est_cost_per_1k;
+      return c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
     },
 
     isBest(metricName, colIdx, cols) {
