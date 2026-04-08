@@ -25,6 +25,14 @@ class JobManager:
             return any(j.status in ("pending", "running") for j in self._jobs.values())
 
     def start_job(self, request: RunRequest) -> str:
+        # Purge completed/failed jobs so they don't accumulate
+        with self._lock:
+            terminal = [jid for jid, j in self._jobs.items()
+                        if j.status in ("completed", "failed")]
+            for jid in terminal:
+                self._jobs.pop(jid)
+                self._prompts.pop(jid, None)
+
         if self.is_busy():
             raise RuntimeError("A job is already running")
 
@@ -103,6 +111,9 @@ class JobManager:
             self._update(job_id, status="failed", error=f"{type(e).__name__}: {e}",
                          current_step="Failed")
             traceback.print_exc()
+
+        finally:
+            self._running_thread = None
 
 
 job_manager = JobManager()

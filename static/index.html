@@ -24,6 +24,7 @@
     <div class="mode-toggle" style="flex-wrap:wrap;">
       <template x-for="t in savedTasks" :key="t">
         <button class="btn" :class="{ active: selectedTask === t }"
+          :disabled="isRunning"
           @click="loadTask(t)" x-text="t.replace(/_/g, ' ')">
         </button>
       </template>

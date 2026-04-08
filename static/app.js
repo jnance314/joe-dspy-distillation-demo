@@ -41,6 +41,11 @@ document.addEventListener('alpine:init', () => {
     },
 
     async loadTask(taskName) {
+      if (this.polling) {
+        clearInterval(this.polling);
+        this.polling = null;
+      }
+      this.jobId = null;
       this.selectedTask = taskName;
       this.results = null;
       this.jobStatus = null;
@@ -121,6 +126,11 @@ document.addEventListener('alpine:init', () => {
       return this.task.fields.filter(f => f.field_type === 'output');
     },
 
+    get isRunning() {
+      return this.jobStatus != null
+        && (this.jobStatus.status === 'pending' || this.jobStatus.status === 'running');
+    },
+
     // -- Metric descriptions --------------------------------------------------
 
     getMetricDescription(m) {
@@ -194,6 +204,7 @@ document.addEventListener('alpine:init', () => {
         const res = await fetch(`/api/jobs/${this.jobId}`);
         if (res.status === 404) {
           clearInterval(this.polling);
+          this.polling = null;
           this.jobId = null;
           this.jobStatus = null;
           this.error = 'Job lost -- the server restarted. Please run again.';
@@ -204,10 +215,12 @@ document.addEventListener('alpine:init', () => {
 
         if (status.status === 'completed') {
           clearInterval(this.polling);
+          this.polling = null;
           this.results = status.results;
           this._initEditedPrompts();
         } else if (status.status === 'failed') {
           clearInterval(this.polling);
+          this.polling = null;
           this.error = status.error;
         }
       } catch (e) {
